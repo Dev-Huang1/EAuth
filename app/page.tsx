@@ -213,7 +213,7 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 transition-colors duration-300">
       <header className="bg-white dark:bg-gray-800 shadow-sm">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">2FA Auth App</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">EAuth</h1>
           <div className="flex items-center space-x-2">
             <Button
               variant="ghost"
