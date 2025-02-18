@@ -126,7 +126,7 @@ export default function Home() {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData))
     const downloadAnchorNode = document.createElement("a")
     downloadAnchorNode.setAttribute("href", dataStr)
-    downloadAnchorNode.setAttribute("download", "ente_auth_export.json")
+    downloadAnchorNode.setAttribute("download", "EAuth_export.json")
     document.body.appendChild(downloadAnchorNode)
     downloadAnchorNode.click()
     downloadAnchorNode.remove()
