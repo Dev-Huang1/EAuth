@@ -17,23 +17,83 @@ import { useToast } from "@/components/ui/use-toast"
 import QRCodeScanner from "./QRCodeScanner"
 import GroupManager from "./GroupManager"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import ServiceIcon from "./ServiceIcon"
+import { motion, AnimatePresence } from "framer-motion"
 
 interface AuthCode {
+  id: string
   issuer: string
   account: string
   secret: string
   group: string
+  service: string
 }
 
 interface SettingsMenuProps {
   onClose: () => void
-  onAddCode: (issuer: string, account: string, secret: string, group: string) => void
+  onAddCode: (issuer: string, account: string, secret: string, group: string, service: string) => void
   onUpdateCode: (updatedCode: AuthCode) => void
   groups: string[]
   onAddGroup: (groupName: string) => void
   onRemoveGroup: (groupName: string) => void
   editingCode: AuthCode | null
 }
+
+const services = [
+  "Twitter",
+  "Facebook",
+  "Google",
+  "Apple",
+  "Microsoft",
+  "Amazon",
+  "Dropbox",
+  "Github",
+  "Gitlab",
+  "Bitbucket",
+  "Slack",
+  "Discord",
+  "Twitch",
+  "Steam",
+  "Reddit",
+  "Linkedin",
+  "Instagram",
+  "Tiktok",
+  "Snapchat",
+  "Pinterest",
+  "Tumblr",
+  "Spotify",
+  "Netflix",
+  "Hulu",
+  "Disney",
+  "Airbnb",
+  "Uber",
+  "Lyft",
+  "Doordash",
+  "Grubhub",
+  "Postmates",
+  "Instacart",
+  "Venmo",
+  "Paypal",
+  "Cashapp",
+  "Robinhood",
+  "Coinbase",
+  "Binance",
+  "Kraken",
+  "Etsy",
+  "Shopify",
+  "Wix",
+  "Squarespace",
+  "Wordpress",
+  "Joomla",
+  "Drupal",
+  "Magento",
+  "Salesforce",
+  "Hubspot",
+  "Zendesk",
+  "Atlassian",
+  "Adobe",
+  "Autodesk",
+]
 
 export default function SettingsMenu({
   onClose,
@@ -48,6 +108,7 @@ export default function SettingsMenu({
   const [newAccount, setNewAccount] = useState(editingCode?.account || "")
   const [newSecret, setNewSecret] = useState(editingCode?.secret || "")
   const [selectedGroup, setSelectedGroup] = useState(editingCode?.group || "All")
+  const [selectedService, setSelectedService] = useState(editingCode?.service || "")
   const { toast } = useToast()
 
   useEffect(() => {
@@ -56,6 +117,7 @@ export default function SettingsMenu({
       setNewAccount(editingCode.account)
       setNewSecret(editingCode.secret)
       setSelectedGroup(editingCode.group)
+      setSelectedService(editingCode.service)
     }
   }, [editingCode])
 
@@ -68,13 +130,14 @@ export default function SettingsMenu({
           account: newAccount,
           secret: newSecret,
           group: selectedGroup,
+          service: selectedService,
         })
         toast({
           title: "Auth Code Updated",
           description: "Authentication code has been updated.",
         })
       } else {
-        onAddCode(newIssuer, newAccount, newSecret, selectedGroup)
+        onAddCode(newIssuer, newAccount, newSecret, selectedGroup, selectedService)
         toast({
           title: "Auth Code Added",
           description: "New authentication code has been added.",
@@ -84,7 +147,7 @@ export default function SettingsMenu({
     } else {
       toast({
         title: "Invalid Input",
-        description: "Please fill in all fields.",
+        description: "Please fill in all required fields.",
         variant: "destructive",
       })
     }
@@ -117,7 +180,12 @@ export default function SettingsMenu({
                 <TabsTrigger value="qr">Scan QR Code</TabsTrigger>
               </TabsList>
               <TabsContent value="manual">
-                <div className="grid gap-4 py-4">
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="grid gap-4 py-4"
+                >
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="new-issuer" className="text-right">
                       Service
@@ -160,24 +228,65 @@ export default function SettingsMenu({
                         <SelectValue placeholder="Select a group" />
                       </SelectTrigger>
                       <SelectContent>
-                        {groups.map((group) => (
-                          <SelectItem key={group} value={group}>
-                            {group}
-                          </SelectItem>
-                        ))}
+                        <AnimatePresence>
+                          {groups.map((group) => (
+                            <motion.div
+                              key={group}
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: 10 }}
+                              transition={{ duration: 0.2 }}
+                            >
+                              <SelectItem value={group}>{group}</SelectItem>
+                            </motion.div>
+                          ))}
+                        </AnimatePresence>
                       </SelectContent>
                     </Select>
                   </div>
-                </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="service" className="text-right">
+                      Service Icon
+                    </Label>
+                    <Select value={selectedService} onValueChange={setSelectedService}>
+                      <SelectTrigger className="col-span-3">
+                        <SelectValue placeholder="Select a service (optional)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="noIcon">No icon</SelectItem> {/* Updated line */}
+                        <AnimatePresence>
+                          {services.map((service) => (
+                            <motion.div
+                              key={service}
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: 10 }}
+                              transition={{ duration: 0.2 }}
+                            >
+                              <SelectItem value={service}>
+                                <div className="flex items-center">
+                                  <ServiceIcon service={service} className="mr-2 h-4 w-4" />
+                                  {service}
+                                </div>
+                              </SelectItem>
+                            </motion.div>
+                          ))}
+                        </AnimatePresence>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </motion.div>
               </TabsContent>
               <TabsContent value="qr">
                 <QRCodeScanner onScan={handleQRCodeScanned} />
               </TabsContent>
             </Tabs>
             <DialogFooter>
-              <Button type="submit" onClick={handleAddOrUpdateCode}>
-                {editingCode ? "Update Auth Code" : "Add Auth Code"}
-              </Button>
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <Button type="submit" onClick={handleAddOrUpdateCode}>
+                  {editingCode ? "Update Auth Code" : "Add Auth Code"}
+                </Button>
+              </motion.div>
             </DialogFooter>
           </TabsContent>
           <TabsContent value="manage-groups">
@@ -188,3 +297,4 @@ export default function SettingsMenu({
     </Dialog>
   )
 }
+
