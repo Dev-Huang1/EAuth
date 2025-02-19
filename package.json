@@ -60,7 +60,9 @@
     "@emotion/is-prop-valid": "latest",
     "framer-motion": "latest",
     "crypto-js": "latest",
-    "qr-scanner": "latest"
+    "qr-scanner": "latest",
+    "react-icons/fa": "latest",
+    "react-icons/si": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",
