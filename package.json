@@ -1,6 +1,6 @@
 {
   "name": "eauth",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -61,8 +61,8 @@
     "framer-motion": "latest",
     "crypto-js": "latest",
     "qr-scanner": "latest",
-    "react-icons/fa": "latest",
-    "react-icons/si": "latest"
+    "@react-icons/fa": "latest",
+    "@react-icons/si": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",
