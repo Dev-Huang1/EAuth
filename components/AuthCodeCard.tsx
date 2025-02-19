@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Pencil, Trash, Star } from "lucide-react"
 import { generateTOTP } from "@/lib/totp"
 import { motion } from "framer-motion"
+import ServiceIcon from "./ServiceIcon"
 
 interface AuthCodeCardProps {
   id: string
@@ -13,6 +14,7 @@ interface AuthCodeCardProps {
   account: string
   secret: string
   isPinned: boolean
+  service: string
   onPin: (id: string) => void
   onEdit: (id: string) => void
   onDelete: (id: string) => void
@@ -24,6 +26,7 @@ export default function AuthCodeCard({
   account,
   secret,
   isPinned,
+  service,
   onPin,
   onEdit,
   onDelete,
@@ -57,14 +60,7 @@ export default function AuthCodeCard({
       <CardHeader className="pb-2 pt-4 px-4">
         <CardTitle className="flex justify-between items-center text-base">
           <span className="font-semibold text-gray-800 dark:text-gray-200">{issuer}</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onPin(id)}
-            className={`hover:bg-gray-100 dark:hover:bg-gray-700 p-1 ${isPinned ? "text-yellow-500" : "text-gray-400"}`}
-          >
-            <Star className="h-4 w-4" />
-          </Button>
+          <ServiceIcon service={service} className="h-5 w-5" />
         </CardTitle>
       </CardHeader>
       <CardContent className="pb-4 px-4 pt-0">
@@ -111,6 +107,16 @@ export default function AuthCodeCard({
         <Button
           variant="ghost"
           size="sm"
+          onClick={() => onPin(id)}
+          className={`text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-1 ${
+            isPinned ? "text-yellow-500" : ""
+          }`}
+        >
+          <Star className="h-3 w-3" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => onEdit(id)}
           className="text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-1"
         >
@@ -128,3 +134,4 @@ export default function AuthCodeCard({
     </Card>
   )
 }
+
