@@ -12,19 +12,29 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Menu, Settings, Download, Upload, KeyRound } from "lucide-react"
+import { Menu, Download, Upload, FolderTree } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Input } from "@/components/ui/input"
-import ChangePasswordForm from "./ChangePasswordForm"
+import ManageGroupsDialog from "./ManageGroupsDialog"
 
 interface MainMenuProps {
   onExport: () => void
   onImport: (event: React.ChangeEvent<HTMLInputElement>) => void
   onOpenSettings: () => void
+  groups: string[]
+  onAddGroup: (groupName: string) => void
+  onRemoveGroup: (groupName: string) => void
 }
 
-export default function MainMenu({ onExport, onImport, onOpenSettings }: MainMenuProps) {
-  const [showChangePassword, setShowChangePassword] = useState(false)
+export default function MainMenu({
+  onExport,
+  onImport,
+  onOpenSettings,
+  groups,
+  onAddGroup,
+  onRemoveGroup,
+}: MainMenuProps) {
+  const [showManageGroups, setShowManageGroups] = useState(false)
   const { theme } = useTheme()
 
   return (
@@ -40,12 +50,12 @@ export default function MainMenu({ onExport, onImport, onOpenSettings }: MainMen
           <DropdownMenuLabel>Menu</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={onOpenSettings}>
-            <Settings className="mr-2 h-4 w-4" />
+            <Menu className="mr-2 h-4 w-4" />
             <span>Add New Code</span>
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setShowChangePassword(true)}>
-            <KeyRound className="mr-2 h-4 w-4" />
-            <span>Change Password</span>
+          <DropdownMenuItem onClick={() => setShowManageGroups(true)}>
+            <FolderTree className="mr-2 h-4 w-4" />
+            <span>Manage Groups</span>
           </DropdownMenuItem>
           <DropdownMenuItem onClick={onExport}>
             <Download className="mr-2 h-4 w-4" />
@@ -60,7 +70,15 @@ export default function MainMenu({ onExport, onImport, onOpenSettings }: MainMen
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      {showChangePassword && <ChangePasswordForm onClose={() => setShowChangePassword(false)} />}
+      {showManageGroups && (
+        <ManageGroupsDialog
+          groups={groups}
+          onAddGroup={onAddGroup}
+          onRemoveGroup={onRemoveGroup}
+          onClose={() => setShowManageGroups(false)}
+        />
+      )}
     </>
   )
 }
+
