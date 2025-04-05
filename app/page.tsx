@@ -3,12 +3,9 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
-import CryptoJS from "crypto-js"
 import AuthCodeCard from "@/components/AuthCodeCard"
-import PasswordPrompt from "@/components/PasswordPrompt"
 import SettingsMenu from "@/components/SettingsMenu"
 import MainMenu from "@/components/MainMenu"
 import { motion, AnimatePresence } from "framer-motion"
@@ -23,91 +20,70 @@ interface AuthCode {
   secret: string
   isPinned: boolean
   group: string
+  service: string
 }
 
 export default function Home() {
-  const [isInitialized, setIsInitialized] = useState(false)
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [authCodes, setAuthCodes] = useState<AuthCode[]>([])
   const [showSettings, setShowSettings] = useState(false)
   const [groups, setGroups] = useState<string[]>(["All"])
   const [activeGroup, setActiveGroup] = useState("All")
-  const [editingCode, setEditingCode] = useState<AuthCode | null>(null) // Added state for editing
+  const [editingCode, setEditingCode] = useState<AuthCode | null>(null)
   const { toast } = useToast()
-  const router = useRouter()
   const { theme, setTheme } = useTheme()
 
   useEffect(() => {
-    const initialized = localStorage.getItem("initialized")
-    if (!initialized) {
-      router.push("/init")
-    } else {
-      setIsInitialized(true)
-    }
-  }, [router])
-
-  useEffect(() => {
-    if (isInitialized) {
-      const storedCodes = localStorage.getItem("authCodes")
-      if (storedCodes) {
-        setAuthCodes(JSON.parse(decryptData(storedCodes)))
-      }
-      const storedGroups = localStorage.getItem("groups")
-      if (storedGroups) {
-        setGroups(JSON.parse(decryptData(storedGroups)))
+    // 从本地存储加载数据
+    const storedCodes = localStorage.getItem("authCodes")
+    if (storedCodes) {
+      try {
+        setAuthCodes(JSON.parse(storedCodes))
+      } catch (e) {
+        console.error("Failed to parse stored auth codes:", e)
       }
     }
-  }, [isInitialized])
 
-  const encryptData = (data: string): string => {
-    const password = localStorage.getItem("appPassword")
-    return CryptoJS.AES.encrypt(data, password!).toString()
-  }
-
-  const decryptData = (data: string): string => {
-    const password = localStorage.getItem("appPassword")
-    const bytes = CryptoJS.AES.decrypt(data, password!)
-    return bytes.toString(CryptoJS.enc.Utf8)
-  }
-
-  const handleAuthentication = (password: string) => {
-    const storedPassword = localStorage.getItem("appPassword")
-    if (storedPassword === CryptoJS.SHA256(password).toString()) {
-      setIsAuthenticated(true)
-    } else {
-      toast({
-        title: "Authentication Failed",
-        description: "Incorrect password. Please try again.",
-        variant: "destructive",
-      })
+    const storedGroups = localStorage.getItem("groups")
+    if (storedGroups) {
+      try {
+        setGroups(JSON.parse(storedGroups))
+      } catch (e) {
+        console.error("Failed to parse stored groups:", e)
+      }
     }
-  }
+  }, [])
 
-  const addAuthCode = (issuer: string, account: string, secret: string, group: string) => {
-    const newCode: AuthCode = { id: Date.now().toString(), issuer, account, secret, isPinned: false, group }
+  const addAuthCode = (issuer: string, account: string, secret: string, group: string, service: string) => {
+    const newCode: AuthCode = { id: Date.now().toString(), issuer, account, secret, isPinned: false, group, service }
     const updatedCodes = [...authCodes, newCode]
     setAuthCodes(updatedCodes)
-    localStorage.setItem("authCodes", encryptData(JSON.stringify(updatedCodes)))
+    localStorage.setItem("authCodes", JSON.stringify(updatedCodes))
+  }
+
+  const updateAuthCode = (updatedCode: AuthCode) => {
+    const updatedCodes = authCodes.map((code) => (code.id === updatedCode.id ? updatedCode : code))
+    setAuthCodes(updatedCodes)
+    localStorage.setItem("authCodes", JSON.stringify(updatedCodes))
   }
 
   const pinAuthCode = (id: string) => {
     const updatedCodes = authCodes.map((code) => (code.id === id ? { ...code, isPinned: !code.isPinned } : code))
     setAuthCodes(updatedCodes)
-    localStorage.setItem("authCodes", encryptData(JSON.stringify(updatedCodes)))
+    localStorage.setItem("authCodes", JSON.stringify(updatedCodes))
   }
 
   const editAuthCode = (id: string) => {
     const codeToEdit = authCodes.find((code) => code.id === id)
     if (codeToEdit) {
-      setShowSettings(true)
       setEditingCode(codeToEdit)
+      setShowSettings(true)
     }
   }
 
   const deleteAuthCode = (id: string) => {
     const updatedCodes = authCodes.filter((code) => code.id !== id)
     setAuthCodes(updatedCodes)
-    localStorage.setItem("authCodes", encryptData(JSON.stringify(updatedCodes)))
+    localStorage.setItem("authCodes", JSON.stringify(updatedCodes))
   }
 
   const exportData = () => {
@@ -121,12 +97,14 @@ export default function Home() {
         digits: 6,
         period: 30,
         type: "TOTP",
+        group: code.group,
+        service: code.service,
       })),
     }
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData))
     const downloadAnchorNode = document.createElement("a")
     downloadAnchorNode.setAttribute("href", dataStr)
-    downloadAnchorNode.setAttribute("download", "EAuth_export.json")
+    downloadAnchorNode.setAttribute("download", "2fa_auth_export.json")
     document.body.appendChild(downloadAnchorNode)
     downloadAnchorNode.click()
     downloadAnchorNode.remove()
@@ -147,10 +125,11 @@ export default function Home() {
               account: token.account,
               secret: token.secret,
               isPinned: false,
-              group: "All", // Assign to default group on import
+              group: token.group || "All",
+              service: token.service || "",
             }))
             setAuthCodes(newAuthCodes)
-            localStorage.setItem("authCodes", encryptData(JSON.stringify(newAuthCodes)))
+            localStorage.setItem("authCodes", JSON.stringify(newAuthCodes))
             toast({
               title: "Import Successful",
               description: "Your auth codes have been imported.",
@@ -172,8 +151,9 @@ export default function Home() {
 
   const addGroup = (groupName: string) => {
     if (!groups.includes(groupName)) {
-      setGroups([...groups, groupName])
-      localStorage.setItem("groups", encryptData(JSON.stringify([...groups, groupName])))
+      const updatedGroups = [...groups, groupName]
+      setGroups(updatedGroups)
+      localStorage.setItem("groups", JSON.stringify(updatedGroups))
     }
   }
 
@@ -181,25 +161,17 @@ export default function Home() {
     if (groupName !== "All") {
       const updatedGroups = groups.filter((g) => g !== groupName)
       setGroups(updatedGroups)
-      localStorage.setItem("groups", encryptData(JSON.stringify(updatedGroups)))
+      localStorage.setItem("groups", JSON.stringify(updatedGroups))
 
       // Move auth codes from the removed group to "All"
       const updatedCodes = authCodes.map((code) => (code.group === groupName ? { ...code, group: "All" } : code))
       setAuthCodes(updatedCodes)
-      localStorage.setItem("authCodes", encryptData(JSON.stringify(updatedCodes)))
+      localStorage.setItem("authCodes", JSON.stringify(updatedCodes))
 
       if (activeGroup === groupName) {
         setActiveGroup("All")
       }
     }
-  }
-
-  if (!isInitialized) {
-    return null // or a loading indicator
-  }
-
-  if (!isAuthenticated) {
-    return <PasswordPrompt onAuthenticate={handleAuthentication} />
   }
 
   const sortedAuthCodes = [...authCodes].sort((a, b) => {
@@ -213,7 +185,7 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 transition-colors duration-300">
       <header className="bg-white dark:bg-gray-800 shadow-sm">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">EAuth</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">2FA Auth App</h1>
           <div className="flex items-center space-x-2">
             <Button
               variant="ghost"
@@ -225,7 +197,14 @@ export default function Home() {
               <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
               <span className="sr-only">Toggle theme</span>
             </Button>
-            <MainMenu onExport={exportData} onImport={importData} onOpenSettings={() => setShowSettings(true)} />
+            <MainMenu
+              onExport={exportData}
+              onImport={importData}
+              onOpenSettings={() => setShowSettings(true)}
+              groups={groups}
+              onAddGroup={addGroup}
+              onRemoveGroup={removeGroup}
+            />
           </div>
         </div>
       </header>
@@ -278,6 +257,7 @@ export default function Home() {
                     account={code.account}
                     secret={code.secret}
                     isPinned={code.isPinned}
+                    service={code.service}
                     onPin={pinAuthCode}
                     onEdit={editAuthCode}
                     onDelete={deleteAuthCode}
@@ -294,18 +274,12 @@ export default function Home() {
             setEditingCode(null)
           }}
           onAddCode={addAuthCode}
-          onUpdateCode={(updatedCode) => {
-            const updatedCodes = authCodes.map((code) => (code.id === updatedCode.id ? updatedCode : code))
-            setAuthCodes(updatedCodes)
-            localStorage.setItem("authCodes", encryptData(JSON.stringify(updatedCodes)))
-            setEditingCode(null)
-          }}
+          onUpdateCode={updateAuthCode}
           groups={groups}
-          onAddGroup={addGroup}
-          onRemoveGroup={removeGroup}
           editingCode={editingCode}
         />
       )}
     </div>
   )
 }
+
