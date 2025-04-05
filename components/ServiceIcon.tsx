@@ -1,124 +1,29 @@
-import type React from "react"
-import {
-  FaTwitter,
-  FaFacebook,
-  FaGoogle,
-  FaApple,
-  FaMicrosoft,
-  FaAmazon,
-  FaDropbox,
-  FaGithub,
-  FaGitlab,
-  FaBitbucket,
-  FaSlack,
-  FaDiscord,
-  FaTwitch,
-  FaSteam,
-  FaReddit,
-  FaLinkedin,
-  FaInstagram,
-  FaTiktok,
-  FaSnapchatGhost,
-  FaPinterest,
-  FaTumblr,
-  FaSpotify,
-  FaAirbnb,
-  FaUber,
-  FaVimeoV,
-  FaPaypal,
-  FaDollarSign,
-  FaBitcoin,
-  FaEtsy,
-  FaShopify,
-  FaWix,
-  FaSquarespace,
-  FaWordpress,
-  FaJoomla,
-  FaDrupal,
-  FaMagento,
-  FaSalesforce,
-  FaHubspot,
-  FaAtlassian,
-  FaGlobe,
-} from "react-icons/fa"
-import {
-  SiNetflix,
-  SiLyft,
-  SiDoordash,
-  SiGrubhub,
-  SiPostmates,
-  SiInstacart,
-  SiRobinhood,
-  SiZendesk,
-  SiAutodesk,
-  SiAdobe,
-} from "react-icons/si"
-import type { IconType } from "react-icons"
+import { FaGlobe } from "react-icons/fa"
 
 interface ServiceIconProps {
-  service: string
+  service?: string
   className?: string
 }
 
-const iconMap: { [key: string]: { icon: IconType; color: string } } = {
-  twitter: { icon: FaTwitter, color: "#1DA1F2" },
-  facebook: { icon: FaFacebook, color: "#4267B2" },
-  google: { icon: FaGoogle, color: "#4285F4" },
-  apple: { icon: FaApple, color: "#A3AAAE" },
-  microsoft: { icon: FaMicrosoft, color: "#00A4EF" },
-  amazon: { icon: FaAmazon, color: "#FF9900" },
-  dropbox: { icon: FaDropbox, color: "#0061FF" },
-  github: { icon: FaGithub, color: "#181717" },
-  gitlab: { icon: FaGitlab, color: "#FCA121" },
-  bitbucket: { icon: FaBitbucket, color: "#0052CC" },
-  slack: { icon: FaSlack, color: "#4A154B" },
-  discord: { icon: FaDiscord, color: "#7289DA" },
-  twitch: { icon: FaTwitch, color: "#9146FF" },
-  steam: { icon: FaSteam, color: "#000000" },
-  reddit: { icon: FaReddit, color: "#FF4500" },
-  linkedin: { icon: FaLinkedin, color: "#0A66C2" },
-  instagram: { icon: FaInstagram, color: "#E4405F" },
-  tiktok: { icon: FaTiktok, color: "#000000" },
-  snapchat: { icon: FaSnapchatGhost, color: "#FFFC00" },
-  pinterest: { icon: FaPinterest, color: "#BD081C" },
-  tumblr: { icon: FaTumblr, color: "#36465D" },
-  spotify: { icon: FaSpotify, color: "#1DB954" },
-  netflix: { icon: SiNetflix, color: "#E50914" },
-  airbnb: { icon: FaAirbnb, color: "#FF5A5F" },
-  uber: { icon: FaUber, color: "#000000" },
-  lyft: { icon: SiLyft, color: "#FF00BF" },
-  doordash: { icon: SiDoordash, color: "#FF3008" },
-  grubhub: { icon: SiGrubhub, color: "#F63440" },
-  postmates: { icon: SiPostmates, color: "#000000" },
-  instacart: { icon: SiInstacart, color: "#43B02A" },
-  venmo: { icon: FaVimeoV, color: "#3D95CE" },
-  paypal: { icon: FaPaypal, color: "#00457C" },
-  cashapp: { icon: FaDollarSign, color: "#00C244" },
-  robinhood: { icon: SiRobinhood, color: "#00C805" },
-  coinbase: { icon: FaBitcoin, color: "#0052FF" },
-  binance: { icon: FaBitcoin, color: "#F0B90B" },
-  kraken: { icon: FaBitcoin, color: "#5741D9" },
-  etsy: { icon: FaEtsy, color: "#F16521" },
-  shopify: { icon: FaShopify, color: "#7AB55C" },
-  wix: { icon: FaWix, color: "#0C6EFC" },
-  squarespace: { icon: FaSquarespace, color: "#000000" },
-  wordpress: { icon: FaWordpress, color: "#21759B" },
-  joomla: { icon: FaJoomla, color: "#5091CD" },
-  drupal: { icon: FaDrupal, color: "#0678BE" },
-  magento: { icon: FaMagento, color: "#EE672F" },
-  salesforce: { icon: FaSalesforce, color: "#00A1E0" },
-  hubspot: { icon: FaHubspot, color: "#FF7A59" },
-  zendesk: { icon: SiZendesk, color: "#03363D" },
-  atlassian: { icon: FaAtlassian, color: "#0052CC" },
-  adobe: { icon: SiAdobe, color: "#FF0000" },
-  autodesk: { icon: SiAutodesk, color: "#0696D7" },
-}
+export default function ServiceIcon({ service, className }: ServiceIconProps) {
+  if (!service) {
+    return <FaGlobe className={className} style={{ color: "#4A5568" }} />
+  }
 
-const ServiceIcon: React.FC<ServiceIconProps> = ({ service, className }) => {
-  const lowerCaseService = service.toLowerCase()
-  const { icon: Icon, color } = iconMap[lowerCaseService] || { icon: FaGlobe, color: "#4A5568" }
-  return <Icon className={className} style={{ color }} />
-}
+  // 构建网站 favicon URL
+  const faviconUrl = `https://www.google.com/s2/favicons?domain=${service}&sz=64`
 
-export default ServiceIcon
+  return (
+    <img
+      src={faviconUrl || "/placeholder.svg"}
+      alt={`${service} icon`}
+      className={className}
+      onError={(e) => {
+        e.currentTarget.onerror = null
+        e.currentTarget.src =
+          "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9ImN1cnJlbnRDb2xvciIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIGNsYXNzPSJsdWNpZGUgbHVjaWRlLWdsb2JlIj48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIxMCIvPjxsaW5lIHgxPSIyIiB5MT0iMTIiIHgyPSIyMiIgeTI9IjEyIi8+PHBhdGggZD0iTTEyIDJhMTUuMyAxNS4zIDAgMCAxIDQgMTAgMTUuMyAxNS4zIDAgMCAxLTQgMTAgMTUuMyAxNS4zIDAgMCAxLTQtMTAgMTUuMyAxNS4zIDAgMCAxIDQtMTB6Ii8+PC9zdmc+"
+      }}
+    />
+  )
+}
 
