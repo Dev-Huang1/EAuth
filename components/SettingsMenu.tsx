@@ -18,6 +18,8 @@ import QRCodeScanner from "./QRCodeScanner"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import ServiceIcon from "./ServiceIcon"
 import { motion, AnimatePresence } from "framer-motion"
+// Import the decryptData function
+import { decryptData } from "@/lib/encryption"
 
 interface AuthCode {
   id: string
@@ -44,11 +46,22 @@ export default function SettingsMenu({ onClose, onAddCode, onUpdateCode, groups,
   const [website, setWebsite] = useState(editingCode?.service || "")
   const { toast } = useToast()
 
+  // Update the useEffect to decrypt the secret when editing
   useEffect(() => {
     if (editingCode) {
       setNewIssuer(editingCode.issuer)
       setNewAccount(editingCode.account)
-      setNewSecret(editingCode.secret)
+
+      // Decrypt the secret if it's encrypted
+      if (editingCode.secret.includes(":")) {
+        const [encryptionKey, encryptedSecret] = editingCode.secret.split(":")
+        const decryptedSecret = decryptData(encryptedSecret, encryptionKey)
+        setNewSecret(decryptedSecret)
+      } else {
+        // Handle legacy unencrypted secrets
+        setNewSecret(editingCode.secret)
+      }
+
       setSelectedGroup(editingCode.group)
       setWebsite(editingCode.service)
     }
