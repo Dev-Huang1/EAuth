@@ -7,6 +7,9 @@ import { Pencil, Trash, Star } from "lucide-react"
 import { generateTOTP } from "@/lib/totp"
 import { motion } from "framer-motion"
 import ServiceIcon from "./ServiceIcon"
+import DeleteConfirmDialog from "./DeleteConfirmDialog"
+// Import the decryptData function
+import { decryptData } from "@/lib/encryption"
 
 interface AuthCodeCardProps {
   id: string
@@ -33,11 +36,22 @@ export default function AuthCodeCard({
 }: AuthCodeCardProps) {
   const [code, setCode] = useState("")
   const [timeLeft, setTimeLeft] = useState(30)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   useEffect(() => {
+    // Update the generateCode function inside useEffect
     const generateCode = async () => {
-      const newCode = await generateTOTP(secret)
-      setCode(newCode)
+      // Check if the secret contains an encryption key
+      if (secret.includes(":")) {
+        const [encryptionKey, encryptedSecret] = secret.split(":")
+        const decryptedSecret = decryptData(encryptedSecret, encryptionKey)
+        const newCode = await generateTOTP(decryptedSecret)
+        setCode(newCode)
+      } else {
+        // Handle legacy unencrypted secrets
+        const newCode = await generateTOTP(secret)
+        setCode(newCode)
+      }
       setTimeLeft(30)
     }
 
@@ -125,12 +139,22 @@ export default function AuthCodeCard({
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => onDelete(id)}
+          onClick={() => setShowDeleteConfirm(true)}
           className="text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 p-1"
         >
           <Trash className="h-3 w-3" />
         </Button>
       </CardFooter>
+      {showDeleteConfirm && (
+        <DeleteConfirmDialog
+          isOpen={showDeleteConfirm}
+          onClose={() => setShowDeleteConfirm(false)}
+          onConfirm={() => {
+            onDelete(id)
+            setShowDeleteConfirm(false)
+          }}
+        />
+      )}
     </Card>
   )
 }
