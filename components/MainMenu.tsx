@@ -12,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Menu, Download, Upload, FolderTree } from "lucide-react"
+import { Menu, Download, Upload, FolderTree, Save, Database } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Input } from "@/components/ui/input"
 import ManageGroupsDialog from "./ManageGroupsDialog"
@@ -24,6 +24,10 @@ interface MainMenuProps {
   groups: string[]
   onAddGroup: (groupName: string) => void
   onRemoveGroup: (groupName: string) => void
+  onBackup: () => void
+  onImportBackup: () => void
+  isAutoBackupEnabled: boolean
+  onToggleAutoBackup: () => void
 }
 
 export default function MainMenu({
@@ -33,6 +37,10 @@ export default function MainMenu({
   groups,
   onAddGroup,
   onRemoveGroup,
+  onBackup,
+  onImportBackup,
+  isAutoBackupEnabled,
+  onToggleAutoBackup,
 }: MainMenuProps) {
   const [showManageGroups, setShowManageGroups] = useState(false)
   const { theme } = useTheme()
@@ -57,6 +65,20 @@ export default function MainMenu({
             <FolderTree className="mr-2 h-4 w-4" />
             <span>Manage Groups</span>
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={onBackup}>
+            <Save className="mr-2 h-4 w-4" />
+            <span>Backup Data</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onImportBackup}>
+            <Database className="mr-2 h-4 w-4" />
+            <span>Import Data</span>
+          </DropdownMenuItem>
+          {isAutoBackupEnabled ? (
+            <DropdownMenuItem onClick={onToggleAutoBackup}>
+              <Save className="mr-2 h-4 w-4" />
+              <span>Disable Auto Backup</span>
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem onClick={onExport}>
             <Download className="mr-2 h-4 w-4" />
             <span>Export Data</span>
