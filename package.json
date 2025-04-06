@@ -61,7 +61,8 @@
     "framer-motion": "latest",
     "crypto-js": "latest",
     "qr-scanner": "latest",
-    "react-icons": "latest"
+    "react-icons": "latest",
+    "@vercel/blob": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",
