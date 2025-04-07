@@ -12,11 +12,11 @@ import { motion, AnimatePresence } from "framer-motion"
 import { Moon, Sun, Plus } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import BackupDialog from "@/components/BackupDialog"
-import ImportDialog from "@/components/ImportDialog"
-import AutoBackupConfirmDialog from "@/components/AutoBackupConfirmDialog"
 import { encryptData } from "@/lib/encryption"
 import { backupToBlob } from "@/lib/blob-service"
+import { importFromBlob } from "@/lib/blob-service"
+import { useAuth } from "@clerk/nextjs"
+import LoginDialog from "@/components/LoginDialog"
 
 interface AuthCode {
   id: string
@@ -36,11 +36,8 @@ export default function Home() {
   const [editingCode, setEditingCode] = useState<AuthCode | null>(null)
   const { toast } = useToast()
   const { theme, setTheme } = useTheme()
-  const [showBackupDialog, setShowBackupDialog] = useState(false)
-  const [showImportDialog, setShowImportDialog] = useState(false)
-  const [showAutoBackupConfirm, setShowAutoBackupConfirm] = useState(false)
-  const [isAutoBackupEnabled, setIsAutoBackupEnabled] = useState(false)
-  const [backupPassword, setBackupPassword] = useState("")
+  const [showLoginDialog, setShowLoginDialog] = useState(false)
+  const { isSignedIn, userId, signOut } = useAuth()
   const [isBackingUp, setIsBackingUp] = useState(false)
 
   useEffect(() => {
@@ -64,46 +61,82 @@ export default function Home() {
     }
   }, [])
 
-  useEffect(() => {
-    // Check if auto backup is enabled
-    const autoBackup = localStorage.getItem("autoBackupEnabled")
-    if (autoBackup === "true") {
-      setIsAutoBackupEnabled(true)
-
-      // Get the backup password if auto backup is enabled
-      const storedPassword = localStorage.getItem("backupPassword")
-      if (storedPassword) {
-        setBackupPassword(storedPassword)
-      }
-    }
-  }, [])
-
   const performAutoBackup = useCallback(async () => {
-    if (isAutoBackupEnabled && backupPassword && !isBackingUp) {
+    if (isSignedIn && !isBackingUp) {
       try {
         setIsBackingUp(true)
-        console.log("Performing auto backup...")
+        console.log("Performing automatic backup...")
         const dataToBackup = JSON.stringify(authCodes)
-        const result = await backupToBlob(dataToBackup, backupPassword)
+        const result = await backupToBlob(dataToBackup)
         if (!result.success) {
-          console.error("Auto backup failed")
+          console.error("Automatic backup failed")
         } else {
-          console.log("Auto backup successful")
+          console.log("Automatic backup successful")
         }
       } catch (error) {
-        console.error("Auto backup failed:", error)
+        console.error("Automatic backup failed:", error)
       } finally {
         setIsBackingUp(false)
       }
     }
-  }, [isAutoBackupEnabled, backupPassword, authCodes, isBackingUp])
+  }, [isSignedIn, authCodes, isBackingUp])
 
-  // Watch for changes to authCodes and trigger auto backup
   useEffect(() => {
-    if (authCodes.length > 0) {
-      performAutoBackup()
+    const importDataOnLogin = async () => {
+      if (isSignedIn && userId) {
+        try {
+          console.log("Attempting to import data for signed-in user")
+          const result = await importFromBlob()
+
+          if (result.success && result.data) {
+            try {
+              const importedCodes = JSON.parse(result.data) as AuthCode[]
+              setAuthCodes(importedCodes)
+              localStorage.setItem("authCodes", JSON.stringify(importedCodes))
+
+              toast({
+                title: "Data Restored",
+                description: `Imported ${importedCodes.length} authentication codes from your backup`,
+              })
+            } catch (parseError) {
+              console.error("Error parsing imported data:", parseError)
+            }
+          }
+        } catch (error) {
+          console.error("Error importing data on login:", error)
+        }
+      }
     }
-  }, [authCodes, performAutoBackup])
+
+    importDataOnLogin()
+  }, [isSignedIn, userId, toast])
+
+  const handleLogin = () => {
+    setShowLoginDialog(true)
+  }
+
+  const handleLogout = async () => {
+    // Backup data before signing out
+    await performAutoBackup()
+    await signOut()
+    toast({
+      title: "Signed Out",
+      description: "You have been signed out. Your data is backed up.",
+    })
+  }
+
+  const handleDataChange = useCallback(
+    (newCodes: AuthCode[]) => {
+      setAuthCodes(newCodes)
+      localStorage.setItem("authCodes", JSON.stringify(newCodes))
+
+      // Trigger backup if signed in
+      if (isSignedIn) {
+        performAutoBackup()
+      }
+    },
+    [isSignedIn, performAutoBackup],
+  )
 
   const addAuthCode = (issuer: string, account: string, secret: string, group: string, service: string) => {
     // Generate a random key for encrypting this specific secret
@@ -126,8 +159,7 @@ export default function Home() {
     }
 
     const updatedCodes = [...authCodes, newCode]
-    setAuthCodes(updatedCodes)
-    localStorage.setItem("authCodes", JSON.stringify(updatedCodes))
+    handleDataChange(updatedCodes)
   }
 
   const updateAuthCode = (updatedCode: AuthCode) => {
@@ -148,28 +180,17 @@ export default function Home() {
     }
 
     const updatedCodes = authCodes.map((code) => (code.id === updatedCode.id ? updatedCode : code))
-    setAuthCodes(updatedCodes)
-    localStorage.setItem("authCodes", JSON.stringify(updatedCodes))
+    handleDataChange(updatedCodes)
   }
 
   const pinAuthCode = (id: string) => {
     const updatedCodes = authCodes.map((code) => (code.id === id ? { ...code, isPinned: !code.isPinned } : code))
-    setAuthCodes(updatedCodes)
-    localStorage.setItem("authCodes", JSON.stringify(updatedCodes))
-  }
-
-  const editAuthCode = (id: string) => {
-    const codeToEdit = authCodes.find((code) => code.id === id)
-    if (codeToEdit) {
-      setEditingCode(codeToEdit)
-      setShowSettings(true)
-    }
+    handleDataChange(updatedCodes)
   }
 
   const deleteAuthCode = (id: string) => {
     const updatedCodes = authCodes.filter((code) => code.id !== id)
-    setAuthCodes(updatedCodes)
-    localStorage.setItem("authCodes", JSON.stringify(updatedCodes))
+    handleDataChange(updatedCodes)
   }
 
   const exportData = () => {
@@ -251,8 +272,7 @@ export default function Home() {
 
       // Move auth codes from the removed group to "All"
       const updatedCodes = authCodes.map((code) => (code.group === groupName ? { ...code, group: "All" } : code))
-      setAuthCodes(updatedCodes)
-      localStorage.setItem("authCodes", JSON.stringify(updatedCodes))
+      handleDataChange(updatedCodes)
 
       if (activeGroup === groupName) {
         setActiveGroup("All")
@@ -267,179 +287,16 @@ export default function Home() {
     return a.isPinned ? -1 : 1
   })
 
-  const handleBackup = async (password: string, hash: string) => {
-    try {
-      const dataToBackup = JSON.stringify(authCodes)
-      const result = await backupToBlob(dataToBackup, hash)
-
-      if (result.success) {
-        setShowBackupDialog(false)
-        setShowAutoBackupConfirm(true)
-        // Store the password for potential auto backup
-        setBackupPassword(hash)
-        localStorage.setItem("backupPassword", hash)
-
-        toast({
-          title: "Backup Successful",
-          description: "Your data has been backed up successfully.",
-        })
-      } else {
-        throw new Error("Backup failed")
-      }
-    } catch (error) {
-      toast({
-        title: "Backup Failed",
-        description: "There was an error backing up your data.",
-        variant: "destructive",
-      })
-      console.error("Backup error:", error)
-    }
-  }
-
-  const handleImport = async (password: string, hash: string) => {
-    try {
-      console.log("Starting import with hash:", hash)
-
-      // Show loading toast
-      toast({
-        title: "Importing Data",
-        description: "Please wait while we retrieve your data...",
-      })
-
-      // Make the API request
-      const response = await fetch(`/api/import?hash=${encodeURIComponent(hash)}`, {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          "Cache-Control": "no-cache",
-        },
-      })
-
-      console.log("Import response status:", response.status)
-
-      // Handle non-OK responses
-      if (!response.ok) {
-        let errorMessage = "Import failed"
-
-        try {
-          const errorData = await response.json()
-          errorMessage = errorData.error || "Import failed"
-        } catch (e) {
-          // If we can't parse the response as JSON, use the status text
-          errorMessage = `Import failed: ${response.statusText}`
-        }
-
-        console.error("Import error:", errorMessage)
-
-        toast({
-          title: "Import Failed",
-          description: errorMessage,
-          variant: "destructive",
-        })
-
-        return
-      }
-
-      // Parse the response
-      let result
-      try {
-        result = await response.json()
-      } catch (e) {
-        console.error("Failed to parse response as JSON:", e)
-        toast({
-          title: "Import Failed",
-          description: "Invalid response from server",
-          variant: "destructive",
-        })
-        return
-      }
-
-      // Check if we have data
-      if (!result.data) {
-        toast({
-          title: "Import Failed",
-          description: "No data returned from server",
-          variant: "destructive",
-        })
-        return
-      }
-
-      // Parse the imported data
-      try {
-        const importedCodes = JSON.parse(result.data) as AuthCode[]
-        setAuthCodes(importedCodes)
-        localStorage.setItem("authCodes", JSON.stringify(importedCodes))
-
-        // Store the password for potential auto backup
-        setBackupPassword(hash)
-        localStorage.setItem("backupPassword", hash)
-
-        // Close the dialog
-        setShowImportDialog(false)
-
-        toast({
-          title: "Import Successful",
-          description: `Imported ${importedCodes.length} authentication codes`,
-        })
-      } catch (parseError) {
-        console.error("Error parsing imported data:", parseError)
-        toast({
-          title: "Import Failed",
-          description: "The imported data is not in the correct format",
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      console.error("Import error:", error)
-      toast({
-        title: "Import Failed",
-        description: error instanceof Error ? error.message : "An unexpected error occurred",
-        variant: "destructive",
-      })
-    }
-  }
-
-  const enableAutoBackup = () => {
-    setIsAutoBackupEnabled(true)
-    localStorage.setItem("autoBackupEnabled", "true")
-    setShowAutoBackupConfirm(false)
-
-    toast({
-      title: "Auto Backup Enabled",
-      description: "Your data will be automatically backed up when changes are made.",
-    })
-  }
-
-  const toggleAutoBackup = () => {
-    if (isAutoBackupEnabled) {
-      setIsAutoBackupEnabled(false)
-      localStorage.setItem("autoBackupEnabled", "false")
-
-      toast({
-        title: "Auto Backup Disabled",
-        description: "Automatic backup has been disabled.",
-      })
-    } else {
-      if (backupPassword) {
-        setIsAutoBackupEnabled(true)
-        localStorage.setItem("autoBackupEnabled", "true")
-
-        toast({
-          title: "Auto Backup Enabled",
-          description: "Your data will be automatically backed up when changes are made.",
-        })
-      } else {
-        // If no backup password is set, prompt for backup first
-        setShowBackupDialog(true)
-      }
-    }
+  const editAuthCode = (code: AuthCode) => {
+    setEditingCode(code)
+    setShowSettings(true)
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 transition-colors duration-300">
       <header className="bg-white dark:bg-gray-800 shadow-sm">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">EAuth</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">2FA Auth App</h1>
           <div className="flex items-center space-x-2">
             <Button
               variant="ghost"
@@ -452,16 +309,12 @@ export default function Home() {
               <span className="sr-only">Toggle theme</span>
             </Button>
             <MainMenu
-              onExport={exportData}
-              onImport={importData}
               onOpenSettings={() => setShowSettings(true)}
               groups={groups}
               onAddGroup={addGroup}
               onRemoveGroup={removeGroup}
-              onBackup={() => setShowBackupDialog(true)}
-              onImportBackup={() => setShowImportDialog(true)}
-              isAutoBackupEnabled={isAutoBackupEnabled}
-              onToggleAutoBackup={toggleAutoBackup}
+              onLogin={handleLogin}
+              onLogout={handleLogout}
             />
           </div>
         </div>
@@ -537,21 +390,7 @@ export default function Home() {
           editingCode={editingCode}
         />
       )}
-      {showBackupDialog && (
-        <BackupDialog isOpen={showBackupDialog} onClose={() => setShowBackupDialog(false)} onBackup={handleBackup} />
-      )}
-
-      {showImportDialog && (
-        <ImportDialog isOpen={showImportDialog} onClose={() => setShowImportDialog(false)} onImport={handleImport} />
-      )}
-
-      {showAutoBackupConfirm && (
-        <AutoBackupConfirmDialog
-          isOpen={showAutoBackupConfirm}
-          onClose={() => setShowAutoBackupConfirm(false)}
-          onConfirm={enableAutoBackup}
-        />
-      )}
+      {showLoginDialog && <LoginDialog isOpen={showLoginDialog} onClose={() => setShowLoginDialog(false)} />}
     </div>
   )
 }
