@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
 import AuthCodeCard from "@/components/AuthCodeCard"
@@ -36,7 +36,9 @@ export default function Home() {
   const { theme, setTheme } = useTheme()
   const { isSignedIn, userId, signOut } = useAuth()
   const [isBackingUp, setIsBackingUp] = useState(false)
-  const [hasAttemptedSync, setHasAttemptedSync] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const syncIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const lastSyncTimeRef = useRef<number>(0)
 
   // Load data from localStorage
   useEffect(() => {
@@ -80,59 +82,86 @@ export default function Home() {
     }
   }, [isSignedIn, authCodes, isBackingUp])
 
-  // Sync data when user signs in
-  useEffect(() => {
-    const syncData = async () => {
-      if (isSignedIn && userId && !hasAttemptedSync) {
-        setHasAttemptedSync(true)
-        try {
-          console.log("Attempting to sync data for signed-in user")
-          const result = await importFromBlob()
+  // Sync function
+  const syncData = useCallback(
+    async (force = false) => {
+      if (isSignedIn && !isSyncing) {
+        // Only sync if forced or if it's been more than 20 seconds since last sync
+        const now = Date.now()
+        if (force || now - lastSyncTimeRef.current > 20000) {
+          try {
+            setIsSyncing(true)
+            console.log("Syncing data...")
+            const result = await importFromBlob()
 
-          if (result.success && result.data) {
-            try {
-              const importedCodes = JSON.parse(result.data) as AuthCode[]
+            if (result.success && result.data) {
+              try {
+                const importedCodes = JSON.parse(result.data) as AuthCode[]
 
-              // Only update if we have data to import
-              if (importedCodes.length > 0) {
-                setAuthCodes(importedCodes)
-                localStorage.setItem("authCodes", JSON.stringify(importedCodes))
+                // Only update if we have data to import and it's different from what we have
+                if (importedCodes.length > 0) {
+                  const currentCodesJson = JSON.stringify(authCodes)
+                  const importedCodesJson = JSON.stringify(importedCodes)
 
-                toast({
-                  title: "Data Synced",
-                  description: `Imported ${importedCodes.length} authentication codes from your backup`,
-                })
-              } else {
-                // If no data in the cloud but we have local data, back it up
-                if (authCodes.length > 0) {
-                  await performBackup()
+                  if (currentCodesJson !== importedCodesJson) {
+                    setAuthCodes(importedCodes)
+                    localStorage.setItem("authCodes", JSON.stringify(importedCodes))
+                    console.log("Data updated from sync")
+                  } else {
+                    console.log("Data unchanged, no update needed")
+                  }
                 }
-              }
-            } catch (parseError) {
-              console.error("Error parsing imported data:", parseError)
-              // If sync fails but we have local data, back it up
-              if (authCodes.length > 0) {
-                await performBackup()
+
+                lastSyncTimeRef.current = now
+              } catch (parseError) {
+                console.error("Error parsing imported data:", parseError)
               }
             }
-          } else {
-            // If no data in the cloud but we have local data, back it up
-            if (authCodes.length > 0) {
-              await performBackup()
-            }
-          }
-        } catch (error) {
-          console.error("Error syncing data:", error)
-          // If sync fails but we have local data, back it up
-          if (authCodes.length > 0) {
-            await performBackup()
+          } catch (error) {
+            console.error("Error syncing data:", error)
+          } finally {
+            setIsSyncing(false)
           }
         }
       }
-    }
+    },
+    [isSignedIn, isSyncing, authCodes],
+  )
 
-    syncData()
-  }, [isSignedIn, userId, authCodes, performBackup, hasAttemptedSync, toast])
+  // Initial sync when user signs in
+  useEffect(() => {
+    if (isSignedIn && userId) {
+      // Perform initial sync
+      syncData(true).then(() => {
+        // Then perform initial backup if needed
+        if (authCodes.length > 0) {
+          performBackup()
+        }
+      })
+    }
+  }, [isSignedIn, userId, syncData, performBackup, authCodes.length])
+
+  // Set up periodic sync
+  useEffect(() => {
+    if (isSignedIn) {
+      // Clear any existing interval
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current)
+      }
+
+      // Set up new interval for sync every 20 seconds
+      syncIntervalRef.current = setInterval(() => {
+        syncData()
+      }, 20000)
+
+      // Clean up on unmount
+      return () => {
+        if (syncIntervalRef.current) {
+          clearInterval(syncIntervalRef.current)
+        }
+      }
+    }
+  }, [isSignedIn, syncData])
 
   // Handle data changes and trigger backup
   const handleDataChange = useCallback(
@@ -148,11 +177,31 @@ export default function Home() {
     [isSignedIn, performBackup],
   )
 
+  // Handle group changes and trigger backup
+  const handleGroupChange = useCallback(
+    (newGroups: string[]) => {
+      setGroups(newGroups)
+      localStorage.setItem("groups", JSON.stringify(newGroups))
+
+      // Trigger backup if signed in
+      if (isSignedIn) {
+        performBackup()
+      }
+    },
+    [isSignedIn, performBackup],
+  )
+
   const handleLogout = async () => {
     // Backup data before signing out
     if (isSignedIn) {
       await performBackup()
     }
+
+    // Clear sync interval
+    if (syncIntervalRef.current) {
+      clearInterval(syncIntervalRef.current)
+    }
+
     await signOut()
     toast({
       title: "Signed Out",
@@ -218,16 +267,14 @@ export default function Home() {
   const addGroup = (groupName: string) => {
     if (!groups.includes(groupName)) {
       const updatedGroups = [...groups, groupName]
-      setGroups(updatedGroups)
-      localStorage.setItem("groups", JSON.stringify(updatedGroups))
+      handleGroupChange(updatedGroups)
     }
   }
 
   const removeGroup = (groupName: string) => {
     if (groupName !== "All") {
       const updatedGroups = groups.filter((g) => g !== groupName)
-      setGroups(updatedGroups)
-      localStorage.setItem("groups", JSON.stringify(updatedGroups))
+      handleGroupChange(updatedGroups)
 
       // Move auth codes from the removed group to "All"
       const updatedCodes = authCodes.map((code) => (code.group === groupName ? { ...code, group: "All" } : code))
