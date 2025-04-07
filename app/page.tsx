@@ -13,7 +13,7 @@ import { Moon, Sun, Plus } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { encryptData } from "@/lib/encryption"
-import { backupToBlob, importFromBlob } from "@/lib/blob-service"
+import { backupToBlob, importFromBlob, checkUserBackup } from "@/lib/blob-service"
 import { useAuth } from "@clerk/nextjs"
 
 interface AuthCode {
@@ -38,7 +38,8 @@ export default function Home() {
   const [isBackingUp, setIsBackingUp] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null)
-  const lastSyncTimeRef = useRef<number>(0)
+  const lastModifiedRef = useRef<number>(0)
+  const hasInitializedRef = useRef<boolean>(false)
 
   // Load data from localStorage
   useEffect(() => {
@@ -63,12 +64,12 @@ export default function Home() {
 
   // Backup function
   const performBackup = useCallback(async () => {
-    if (isSignedIn && !isBackingUp && authCodes.length > 0) {
+    if (isSignedIn && userId && !isBackingUp) {
       try {
         setIsBackingUp(true)
-        console.log("Performing backup...")
+        console.log("Performing backup for user:", userId)
         const dataToBackup = JSON.stringify(authCodes)
-        const result = await backupToBlob(dataToBackup)
+        const result = await backupToBlob(dataToBackup, userId)
         if (!result.success) {
           console.error("Backup failed")
         } else {
@@ -80,88 +81,116 @@ export default function Home() {
         setIsBackingUp(false)
       }
     }
-  }, [isSignedIn, authCodes, isBackingUp])
+  }, [isSignedIn, userId, authCodes, isBackingUp])
 
   // Sync function
-  const syncData = useCallback(
-    async (force = false) => {
-      if (isSignedIn && !isSyncing) {
-        // Only sync if forced or if it's been more than 20 seconds since last sync
-        const now = Date.now()
-        if (force || now - lastSyncTimeRef.current > 20000) {
-          try {
-            setIsSyncing(true)
-            console.log("Syncing data...")
-            const result = await importFromBlob()
+  const syncData = useCallback(async () => {
+    if (isSignedIn && userId && !isSyncing) {
+      try {
+        setIsSyncing(true)
+        console.log("Syncing data for user:", userId)
+
+        const result = await importFromBlob(userId)
+
+        if (result.success && result.data) {
+          // Check if the data is newer than what we have
+          if (result.lastModified && result.lastModified > lastModifiedRef.current) {
+            try {
+              const importedCodes = JSON.parse(result.data) as AuthCode[]
+
+              // Update local data
+              setAuthCodes(importedCodes)
+              localStorage.setItem("authCodes", JSON.stringify(importedCodes))
+
+              // Update last modified time
+              lastModifiedRef.current = result.lastModified
+
+              console.log("Data synced successfully")
+            } catch (parseError) {
+              console.error("Error parsing imported data:", parseError)
+            }
+          } else {
+            console.log("No new data to sync")
+          }
+        }
+      } catch (error) {
+        console.error("Error syncing data:", error)
+      } finally {
+        setIsSyncing(false)
+      }
+    }
+  }, [isSignedIn, userId, isSyncing])
+
+  // Initialize when user signs in
+  useEffect(() => {
+    const initializeUser = async () => {
+      if (isSignedIn && userId && !hasInitializedRef.current) {
+        hasInitializedRef.current = true
+
+        try {
+          console.log("Initializing user:", userId)
+
+          // Check if user has a backup
+          const backupCheck = await checkUserBackup(userId)
+
+          if (backupCheck.exists) {
+            // User has a backup, download it
+            console.log("User has existing backup, downloading...")
+            const result = await importFromBlob(userId)
 
             if (result.success && result.data) {
               try {
                 const importedCodes = JSON.parse(result.data) as AuthCode[]
 
-                // Only update if we have data to import and it's different from what we have
-                if (importedCodes.length > 0) {
-                  const currentCodesJson = JSON.stringify(authCodes)
-                  const importedCodesJson = JSON.stringify(importedCodes)
+                // Update local data
+                setAuthCodes(importedCodes)
+                localStorage.setItem("authCodes", JSON.stringify(importedCodes))
 
-                  if (currentCodesJson !== importedCodesJson) {
-                    setAuthCodes(importedCodes)
-                    localStorage.setItem("authCodes", JSON.stringify(importedCodes))
-                    console.log("Data updated from sync")
-                  } else {
-                    console.log("Data unchanged, no update needed")
-                  }
+                // Update last modified time
+                if (result.lastModified) {
+                  lastModifiedRef.current = result.lastModified
                 }
 
-                lastSyncTimeRef.current = now
+                toast({
+                  title: "Data Restored",
+                  description: "Your authentication codes have been restored from backup.",
+                })
               } catch (parseError) {
                 console.error("Error parsing imported data:", parseError)
               }
             }
-          } catch (error) {
-            console.error("Error syncing data:", error)
-          } finally {
-            setIsSyncing(false)
+          } else {
+            // New user, backup current data if any
+            console.log("New user, backing up current data if any...")
+            if (authCodes.length > 0) {
+              await performBackup()
+            }
           }
+
+          // Set up sync interval
+          if (syncIntervalRef.current) {
+            clearInterval(syncIntervalRef.current)
+          }
+
+          syncIntervalRef.current = setInterval(() => {
+            syncData()
+          }, 20000) // Sync every 20 seconds
+        } catch (error) {
+          console.error("Error initializing user:", error)
         }
       }
-    },
-    [isSignedIn, isSyncing, authCodes],
-  )
-
-  // Initial sync when user signs in
-  useEffect(() => {
-    if (isSignedIn && userId) {
-      // Perform initial sync
-      syncData(true).then(() => {
-        // Then perform initial backup if needed
-        if (authCodes.length > 0) {
-          performBackup()
-        }
-      })
     }
-  }, [isSignedIn, userId, syncData, performBackup, authCodes.length])
 
-  // Set up periodic sync
-  useEffect(() => {
-    if (isSignedIn) {
-      // Clear any existing interval
+    initializeUser()
+
+    // Cleanup on unmount or when user signs out
+    return () => {
       if (syncIntervalRef.current) {
         clearInterval(syncIntervalRef.current)
-      }
-
-      // Set up new interval for sync every 20 seconds
-      syncIntervalRef.current = setInterval(() => {
-        syncData()
-      }, 20000)
-
-      // Clean up on unmount
-      return () => {
-        if (syncIntervalRef.current) {
-          clearInterval(syncIntervalRef.current)
-        }
+        syncIntervalRef.current = null
       }
     }
-  }, [isSignedIn, syncData])
+  }, [isSignedIn, userId, authCodes, performBackup, syncData, toast])
 
   // Handle data changes and trigger backup
   const handleDataChange = useCallback(
@@ -170,11 +199,11 @@ export default function Home() {
       localStorage.setItem("authCodes", JSON.stringify(newCodes))
 
       // Trigger backup if signed in
-      if (isSignedIn) {
+      if (isSignedIn && userId) {
         performBackup()
       }
     },
-    [isSignedIn, performBackup],
+    [isSignedIn, userId, performBackup],
   )
 
   // Handle group changes and trigger backup
@@ -184,23 +213,27 @@ export default function Home() {
       localStorage.setItem("groups", JSON.stringify(newGroups))
 
       // Trigger backup if signed in
-      if (isSignedIn) {
+      if (isSignedIn && userId) {
         performBackup()
       }
     },
-    [isSignedIn, performBackup],
+    [isSignedIn, userId, performBackup],
   )
 
   const handleLogout = async () => {
     // Backup data before signing out
-    if (isSignedIn) {
+    if (isSignedIn && userId) {
       await performBackup()
     }
 
     // Clear sync interval
     if (syncIntervalRef.current) {
       clearInterval(syncIntervalRef.current)
+      syncIntervalRef.current = null
     }
+
+    // Reset initialization flag
+    hasInitializedRef.current = false
 
     await signOut()
     toast({
