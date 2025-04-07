@@ -1,5 +1,5 @@
 // Function to backup data to Vercel Blob
-export async function backupToBlob(data: string, userId?: string): Promise<{ url: string; success: boolean }> {
+export async function backupToBlob(data: string): Promise<{ url: string; success: boolean }> {
   try {
     // Create a blob with the data
     const blob = new Blob([data], { type: "application/json" })
