@@ -1,5 +1,7 @@
 "use client"
 
+import type React from "react"
+
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import {
@@ -10,8 +12,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Menu, FolderTree, LogIn, LogOut } from "lucide-react"
+import { Menu, FolderTree, LogIn, LogOut, Download, Upload } from "lucide-react"
 import { useTheme } from "next-themes"
+import { Input } from "@/components/ui/input"
 import ManageGroupsDialog from "./ManageGroupsDialog"
 import { useAuth } from "@clerk/nextjs"
 import { useRouter } from "next/navigation"
@@ -22,9 +25,19 @@ interface MainMenuProps {
   onAddGroup: (groupName: string) => void
   onRemoveGroup: (groupName: string) => void
   onLogout: () => void
+  onExport: () => void
+  onImport: (event: React.ChangeEvent<HTMLInputElement>) => void
 }
 
-export default function MainMenu({ onOpenSettings, groups, onAddGroup, onRemoveGroup, onLogout }: MainMenuProps) {
+export default function MainMenu({
+  onOpenSettings,
+  groups,
+  onAddGroup,
+  onRemoveGroup,
+  onLogout,
+  onExport,
+  onImport,
+}: MainMenuProps) {
   const [showManageGroups, setShowManageGroups] = useState(false)
   const { theme } = useTheme()
   const { isSignedIn } = useAuth()
@@ -54,6 +67,22 @@ export default function MainMenu({ onOpenSettings, groups, onAddGroup, onRemoveG
             <FolderTree className="mr-2 h-4 w-4" />
             <span>Manage Groups</span>
           </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+
+          <DropdownMenuItem onClick={onExport}>
+            <Download className="mr-2 h-4 w-4" />
+            <span>Export Data</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem>
+            <Upload className="mr-2 h-4 w-4" />
+            <label htmlFor="import-file" className="cursor-pointer flex-grow">
+              Import Data
+            </label>
+            <Input id="import-file" type="file" onChange={onImport} accept=".json" className="hidden" />
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
 
           {isSignedIn ? (
             <DropdownMenuItem onClick={onLogout}>
