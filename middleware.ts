@@ -5,6 +5,8 @@ export default authMiddleware({
   publicRoutes: [
     "/",
     "/init",
+    "/sign-in",
+    "/sign-up",
     "/api/backup", // Keep the old route public for backward compatibility
   ],
 })
