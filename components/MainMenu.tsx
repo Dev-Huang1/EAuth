@@ -1,7 +1,5 @@
 "use client"
 
-import type React from "react"
-
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import {
@@ -12,38 +10,31 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Menu, Download, Upload, FolderTree, Save, Database } from "lucide-react"
+import { Menu, FolderTree, LogIn, LogOut } from "lucide-react"
 import { useTheme } from "next-themes"
-import { Input } from "@/components/ui/input"
 import ManageGroupsDialog from "./ManageGroupsDialog"
+import { useAuth } from "@clerk/nextjs"
 
 interface MainMenuProps {
-  onExport: () => void
-  onImport: (event: React.ChangeEvent<HTMLInputElement>) => void
   onOpenSettings: () => void
   groups: string[]
   onAddGroup: (groupName: string) => void
   onRemoveGroup: (groupName: string) => void
-  onBackup: () => void
-  onImportBackup: () => void
-  isAutoBackupEnabled: boolean
-  onToggleAutoBackup: () => void
+  onLogin: () => void
+  onLogout: () => void
 }
 
 export default function MainMenu({
-  onExport,
-  onImport,
   onOpenSettings,
   groups,
   onAddGroup,
   onRemoveGroup,
-  onBackup,
-  onImportBackup,
-  isAutoBackupEnabled,
-  onToggleAutoBackup,
+  onLogin,
+  onLogout,
 }: MainMenuProps) {
   const [showManageGroups, setShowManageGroups] = useState(false)
   const { theme } = useTheme()
+  const { isSignedIn } = useAuth()
 
   return (
     <>
@@ -65,31 +56,18 @@ export default function MainMenu({
             <FolderTree className="mr-2 h-4 w-4" />
             <span>Manage Groups</span>
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={onBackup}>
-            <Save className="mr-2 h-4 w-4" />
-            <span>Backup Data</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={onImportBackup}>
-            <Database className="mr-2 h-4 w-4" />
-            <span>Import Data</span>
-          </DropdownMenuItem>
-          {isAutoBackupEnabled ? (
-            <DropdownMenuItem onClick={onToggleAutoBackup}>
-              <Save className="mr-2 h-4 w-4" />
-              <span>Disable Auto Backup</span>
+
+          {isSignedIn ? (
+            <DropdownMenuItem onClick={onLogout}>
+              <LogOut className="mr-2 h-4 w-4" />
+              <span>Sign Out</span>
             </DropdownMenuItem>
-          ) : null}
-          <DropdownMenuItem onClick={onExport}>
-            <Download className="mr-2 h-4 w-4" />
-            <span>Export Data</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem>
-            <Upload className="mr-2 h-4 w-4" />
-            <label htmlFor="import-file" className="cursor-pointer flex-grow">
-              Import Data
-            </label>
-            <Input id="import-file" type="file" onChange={onImport} accept=".json" className="hidden" />
-          </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem onClick={onLogin}>
+              <LogIn className="mr-2 h-4 w-4" />
+              <span>Sign In</span>
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       {showManageGroups && (
