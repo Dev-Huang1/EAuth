@@ -13,10 +13,8 @@ import { Moon, Sun, Plus } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { encryptData } from "@/lib/encryption"
-import { backupToBlob } from "@/lib/blob-service"
-import { importFromBlob } from "@/lib/blob-service"
+import { backupToBlob, importFromBlob } from "@/lib/blob-service"
 import { useAuth } from "@clerk/nextjs"
-import LoginDialog from "@/components/LoginDialog"
 
 interface AuthCode {
   id: string
@@ -36,12 +34,12 @@ export default function Home() {
   const [editingCode, setEditingCode] = useState<AuthCode | null>(null)
   const { toast } = useToast()
   const { theme, setTheme } = useTheme()
-  const [showLoginDialog, setShowLoginDialog] = useState(false)
   const { isSignedIn, userId, signOut } = useAuth()
   const [isBackingUp, setIsBackingUp] = useState(false)
+  const [hasAttemptedSync, setHasAttemptedSync] = useState(false)
 
+  // Load data from localStorage
   useEffect(() => {
-    // 从本地存储加载数据
     const storedCodes = localStorage.getItem("authCodes")
     if (storedCodes) {
       try {
@@ -61,70 +59,82 @@ export default function Home() {
     }
   }, [])
 
-  const performAutoBackup = useCallback(async () => {
-    if (isSignedIn && !isBackingUp) {
+  // Backup function
+  const performBackup = useCallback(async () => {
+    if (isSignedIn && !isBackingUp && authCodes.length > 0) {
       try {
         setIsBackingUp(true)
-        console.log("Performing automatic backup...")
+        console.log("Performing backup...")
         const dataToBackup = JSON.stringify(authCodes)
         const result = await backupToBlob(dataToBackup)
         if (!result.success) {
-          console.error("Automatic backup failed")
+          console.error("Backup failed")
         } else {
-          console.log("Automatic backup successful")
+          console.log("Backup successful")
         }
       } catch (error) {
-        console.error("Automatic backup failed:", error)
+        console.error("Backup failed:", error)
       } finally {
         setIsBackingUp(false)
       }
     }
   }, [isSignedIn, authCodes, isBackingUp])
 
+  // Sync data when user signs in
   useEffect(() => {
-    const importDataOnLogin = async () => {
-      if (isSignedIn && userId) {
+    const syncData = async () => {
+      if (isSignedIn && userId && !hasAttemptedSync) {
+        setHasAttemptedSync(true)
         try {
-          console.log("Attempting to import data for signed-in user")
+          console.log("Attempting to sync data for signed-in user")
           const result = await importFromBlob()
 
           if (result.success && result.data) {
             try {
               const importedCodes = JSON.parse(result.data) as AuthCode[]
-              setAuthCodes(importedCodes)
-              localStorage.setItem("authCodes", JSON.stringify(importedCodes))
 
-              toast({
-                title: "Data Restored",
-                description: `Imported ${importedCodes.length} authentication codes from your backup`,
-              })
+              // Only update if we have data to import
+              if (importedCodes.length > 0) {
+                setAuthCodes(importedCodes)
+                localStorage.setItem("authCodes", JSON.stringify(importedCodes))
+
+                toast({
+                  title: "Data Synced",
+                  description: `Imported ${importedCodes.length} authentication codes from your backup`,
+                })
+              } else {
+                // If no data in the cloud but we have local data, back it up
+                if (authCodes.length > 0) {
+                  await performBackup()
+                }
+              }
             } catch (parseError) {
               console.error("Error parsing imported data:", parseError)
+              // If sync fails but we have local data, back it up
+              if (authCodes.length > 0) {
+                await performBackup()
+              }
+            }
+          } else {
+            // If no data in the cloud but we have local data, back it up
+            if (authCodes.length > 0) {
+              await performBackup()
             }
           }
         } catch (error) {
-          console.error("Error importing data on login:", error)
+          console.error("Error syncing data:", error)
+          // If sync fails but we have local data, back it up
+          if (authCodes.length > 0) {
+            await performBackup()
+          }
         }
       }
     }
 
-    importDataOnLogin()
-  }, [isSignedIn, userId, toast])
+    syncData()
+  }, [isSignedIn, userId, authCodes, performBackup, hasAttemptedSync, toast])
 
-  const handleLogin = () => {
-    setShowLoginDialog(true)
-  }
-
-  const handleLogout = async () => {
-    // Backup data before signing out
-    await performAutoBackup()
-    await signOut()
-    toast({
-      title: "Signed Out",
-      description: "You have been signed out. Your data is backed up.",
-    })
-  }
-
+  // Handle data changes and trigger backup
   const handleDataChange = useCallback(
     (newCodes: AuthCode[]) => {
       setAuthCodes(newCodes)
@@ -132,11 +142,23 @@ export default function Home() {
 
       // Trigger backup if signed in
       if (isSignedIn) {
-        performAutoBackup()
+        performBackup()
       }
     },
-    [isSignedIn, performAutoBackup],
+    [isSignedIn, performBackup],
   )
+
+  const handleLogout = async () => {
+    // Backup data before signing out
+    if (isSignedIn) {
+      await performBackup()
+    }
+    await signOut()
+    toast({
+      title: "Signed Out",
+      description: "You have been signed out.",
+    })
+  }
 
   const addAuthCode = (issuer: string, account: string, secret: string, group: string, service: string) => {
     // Generate a random key for encrypting this specific secret
@@ -193,6 +215,30 @@ export default function Home() {
     handleDataChange(updatedCodes)
   }
 
+  const addGroup = (groupName: string) => {
+    if (!groups.includes(groupName)) {
+      const updatedGroups = [...groups, groupName]
+      setGroups(updatedGroups)
+      localStorage.setItem("groups", JSON.stringify(updatedGroups))
+    }
+  }
+
+  const removeGroup = (groupName: string) => {
+    if (groupName !== "All") {
+      const updatedGroups = groups.filter((g) => g !== groupName)
+      setGroups(updatedGroups)
+      localStorage.setItem("groups", JSON.stringify(updatedGroups))
+
+      // Move auth codes from the removed group to "All"
+      const updatedCodes = authCodes.map((code) => (code.group === groupName ? { ...code, group: "All" } : code))
+      handleDataChange(updatedCodes)
+
+      if (activeGroup === groupName) {
+        setActiveGroup("All")
+      }
+    }
+  }
+
   const exportData = () => {
     const exportData = {
       version: 1,
@@ -235,8 +281,7 @@ export default function Home() {
               group: token.group || "All",
               service: token.service || "",
             }))
-            setAuthCodes(newAuthCodes)
-            localStorage.setItem("authCodes", JSON.stringify(newAuthCodes))
+            handleDataChange(newAuthCodes)
             toast({
               title: "Import Successful",
               description: "Your auth codes have been imported.",
@@ -256,30 +301,6 @@ export default function Home() {
     }
   }
 
-  const addGroup = (groupName: string) => {
-    if (!groups.includes(groupName)) {
-      const updatedGroups = [...groups, groupName]
-      setGroups(updatedGroups)
-      localStorage.setItem("groups", JSON.stringify(updatedGroups))
-    }
-  }
-
-  const removeGroup = (groupName: string) => {
-    if (groupName !== "All") {
-      const updatedGroups = groups.filter((g) => g !== groupName)
-      setGroups(updatedGroups)
-      localStorage.setItem("groups", JSON.stringify(updatedGroups))
-
-      // Move auth codes from the removed group to "All"
-      const updatedCodes = authCodes.map((code) => (code.group === groupName ? { ...code, group: "All" } : code))
-      handleDataChange(updatedCodes)
-
-      if (activeGroup === groupName) {
-        setActiveGroup("All")
-      }
-    }
-  }
-
   const sortedAuthCodes = [...authCodes].sort((a, b) => {
     if (a.isPinned === b.isPinned) {
       return a.issuer.localeCompare(b.issuer)
@@ -287,9 +308,12 @@ export default function Home() {
     return a.isPinned ? -1 : 1
   })
 
-  const editAuthCode = (code: AuthCode) => {
-    setEditingCode(code)
-    setShowSettings(true)
+  const editAuthCode = (id: string) => {
+    const codeToEdit = authCodes.find((code) => code.id === id)
+    if (codeToEdit) {
+      setEditingCode(codeToEdit)
+      setShowSettings(true)
+    }
   }
 
   return (
@@ -313,8 +337,9 @@ export default function Home() {
               groups={groups}
               onAddGroup={addGroup}
               onRemoveGroup={removeGroup}
-              onLogin={handleLogin}
               onLogout={handleLogout}
+              onExport={exportData}
+              onImport={importData}
             />
           </div>
         </div>
@@ -390,7 +415,6 @@ export default function Home() {
           editingCode={editingCode}
         />
       )}
-      {showLoginDialog && <LoginDialog isOpen={showLoginDialog} onClose={() => setShowLoginDialog(false)} />}
     </div>
   )
 }
