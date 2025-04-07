@@ -14,27 +14,25 @@ import { Menu, FolderTree, LogIn, LogOut } from "lucide-react"
 import { useTheme } from "next-themes"
 import ManageGroupsDialog from "./ManageGroupsDialog"
 import { useAuth } from "@clerk/nextjs"
+import { useRouter } from "next/navigation"
 
 interface MainMenuProps {
   onOpenSettings: () => void
   groups: string[]
   onAddGroup: (groupName: string) => void
   onRemoveGroup: (groupName: string) => void
-  onLogin: () => void
   onLogout: () => void
 }
 
-export default function MainMenu({
-  onOpenSettings,
-  groups,
-  onAddGroup,
-  onRemoveGroup,
-  onLogin,
-  onLogout,
-}: MainMenuProps) {
+export default function MainMenu({ onOpenSettings, groups, onAddGroup, onRemoveGroup, onLogout }: MainMenuProps) {
   const [showManageGroups, setShowManageGroups] = useState(false)
   const { theme } = useTheme()
   const { isSignedIn } = useAuth()
+  const router = useRouter()
+
+  const handleLogin = () => {
+    router.push("/sign-in")
+  }
 
   return (
     <>
@@ -63,7 +61,7 @@ export default function MainMenu({
               <span>Sign Out</span>
             </DropdownMenuItem>
           ) : (
-            <DropdownMenuItem onClick={onLogin}>
+            <DropdownMenuItem onClick={handleLogin}>
               <LogIn className="mr-2 h-4 w-4" />
               <span>Sign In</span>
             </DropdownMenuItem>
