@@ -1,16 +1,15 @@
 // Function to backup data to Vercel Blob
-export async function backupToBlob(data: string, hash: string): Promise<{ url: string; success: boolean }> {
+export async function backupToBlob(data: string, userId?: string): Promise<{ url: string; success: boolean }> {
   try {
     // Create a blob with the data
     const blob = new Blob([data], { type: "application/json" })
 
     // Create a file from the blob
-    const file = new File([blob], `${hash}.json`, { type: "application/json" })
+    const file = new File([blob], `backup.json`, { type: "application/json" })
 
     // Create form data
     const formData = new FormData()
     formData.append("file", file)
-    formData.append("hash", hash)
 
     // Get existing file ID if available
     const existingFileId = localStorage.getItem("backupFileId")
@@ -18,8 +17,8 @@ export async function backupToBlob(data: string, hash: string): Promise<{ url: s
       formData.append("fileId", existingFileId)
     }
 
-    // Send the request
-    const response = await fetch("/api/backup", {
+    // Send the request to the user-backup endpoint
+    const response = await fetch("/api/user-backup", {
       method: "POST",
       body: formData,
     })
@@ -56,11 +55,11 @@ export async function backupToBlob(data: string, hash: string): Promise<{ url: s
 }
 
 // Function to import data from Vercel Blob
-export async function importFromBlob(hash: string): Promise<{ data: string; success: boolean }> {
+export async function importFromBlob(): Promise<{ data: string; success: boolean }> {
   try {
-    console.log("Starting import with hash:", hash)
+    console.log("Starting import for authenticated user")
 
-    const response = await fetch(`/api/import?hash=${encodeURIComponent(hash)}`, {
+    const response = await fetch(`/api/user-import`, {
       method: "GET",
       headers: {
         Accept: "application/json",
@@ -96,4 +95,3 @@ export async function importFromBlob(hash: string): Promise<{ data: string; succ
   }
 }
 
-          
