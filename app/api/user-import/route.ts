@@ -4,11 +4,29 @@ import { auth } from "@clerk/nextjs/server"
 
 export async function GET(request: NextRequest) {
   try {
-    const { userId } = auth()
+    const { userId: authUserId } = auth()
 
-    if (!userId) {
+    if (!authUserId) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const userId = searchParams.get("userId")
+
+    if (!userId) {
+      return new Response(JSON.stringify({ error: "User ID parameter is required" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
+    // Verify the requested userId matches the authenticated userId
+    if (userId !== authUserId) {
+      return new Response(JSON.stringify({ error: "Unauthorized access to another user's data" }), {
+        status: 403,
         headers: { "Content-Type": "application/json" },
       })
     }
@@ -63,6 +81,7 @@ export async function GET(request: NextRequest) {
           JSON.stringify({
             data,
             fileId: matchingFile.pathname.split("/").pop(),
+            lastModified: matchingFile.uploadedAt?.getTime() || Date.now(),
             success: true,
           }),
           {
@@ -99,4 +118,3 @@ export async function GET(request: NextRequest) {
   }
 }
 
-        
