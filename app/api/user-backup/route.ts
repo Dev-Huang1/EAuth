@@ -4,9 +4,9 @@ import { auth } from "@clerk/nextjs/server"
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = auth()
+    const { userId: authUserId } = auth()
 
-    if (!userId) {
+    if (!authUserId) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
@@ -15,11 +15,20 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData()
     const file = formData.get("file") as File
+    const userId = formData.get("userId") as string
     const fileId = formData.get("fileId") as string | null
 
-    if (!file) {
-      return new Response(JSON.stringify({ error: "File is required" }), {
+    if (!file || !userId) {
+      return new Response(JSON.stringify({ error: "File and userId are required" }), {
         status: 400,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
+    // Verify the requested userId matches the authenticated userId
+    if (userId !== authUserId) {
+      return new Response(JSON.stringify({ error: "Unauthorized access to another user's data" }), {
+        status: 403,
         headers: { "Content-Type": "application/json" },
       })
     }
