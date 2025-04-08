@@ -47,10 +47,10 @@ export async function GET(request: NextRequest) {
 
       console.log(`Found ${blobs.length} backup files`)
 
-      // Find a file that matches the user ID
+      // Find a file that exactly matches the user ID
       const matchingFile = blobs.find((blob) => {
         const filename = blob.pathname.split("/").pop() || ""
-        return filename.includes(userId)
+        return filename === `${userId}.json`
       })
 
       if (!matchingFile) {
@@ -65,7 +65,11 @@ export async function GET(request: NextRequest) {
 
       // Get the file content
       try {
-        const fileContent = await fetch(matchingFile.url)
+        const fileContent = await fetch(matchingFile.url, {
+          headers: {
+            "Cache-Control": "no-cache",
+          },
+        })
 
         if (!fileContent.ok) {
           console.error("Failed to fetch file content:", fileContent.statusText)
@@ -80,8 +84,6 @@ export async function GET(request: NextRequest) {
         return new Response(
           JSON.stringify({
             data,
-            fileId: matchingFile.pathname.split("/").pop(),
-            lastModified: matchingFile.uploadedAt?.getTime() || Date.now(),
             success: true,
           }),
           {
@@ -117,4 +119,3 @@ export async function GET(request: NextRequest) {
     )
   }
 }
-
