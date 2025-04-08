@@ -4,9 +4,9 @@ import { auth } from "@clerk/nextjs/server"
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId: authUserId } = auth()
+    const { userId } = auth()
 
-    if (!authUserId) {
+    if (!userId) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
@@ -15,43 +15,32 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData()
     const file = formData.get("file") as File
-    const userId = formData.get("userId") as string
-    const fileId = formData.get("fileId") as string | null
 
-    if (!file || !userId) {
-      return new Response(JSON.stringify({ error: "File and userId are required" }), {
+    if (!file) {
+      return new Response(JSON.stringify({ error: "File is required" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       })
     }
 
-    // Verify the requested userId matches the authenticated userId
-    if (userId !== authUserId) {
-      return new Response(JSON.stringify({ error: "Unauthorized access to another user's data" }), {
-        status: 403,
-        headers: { "Content-Type": "application/json" },
-      })
-    }
-
-    console.log("Backing up for user:", userId, "fileId:", fileId || "none")
+    console.log("Backing up for user:", userId)
     console.log("File type:", file.type, "size:", file.size)
 
     try {
+      // Always use the same filename for a user to ensure we're updating the existing blob
       const filename = `eauth/${userId}.json`
 
-      // If we have a fileId, we're updating an existing file
-      const options = fileId
-        ? { access: "public", addRandomSuffix: false, replaceFileId: fileId }
-        : { access: "public", addRandomSuffix: false }
-
-      const blob = await put(filename, file, options)
+      // Use addRandomSuffix: false to ensure we replace the existing file
+      const blob = await put(filename, file, {
+        access: "public",
+        addRandomSuffix: false,
+      })
 
       console.log("Backup successful, URL:", blob.url)
 
       return new Response(
         JSON.stringify({
           url: blob.url,
-          fileId: blob.url.split("/").pop(),
           success: true,
         }),
         {
@@ -86,4 +75,3 @@ export async function POST(request: NextRequest) {
     )
   }
 }
-
