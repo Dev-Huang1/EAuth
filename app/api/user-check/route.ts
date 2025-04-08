@@ -45,10 +45,10 @@ export async function GET(request: NextRequest) {
         })
       }
 
-      // Find a file that matches the user ID
+      // Find a file that exactly matches the user ID
       const matchingFile = blobs.find((blob) => {
         const filename = blob.pathname.split("/").pop() || ""
-        return filename.includes(userId)
+        return filename === `${userId}.json`
       })
 
       if (!matchingFile) {
@@ -65,7 +65,6 @@ export async function GET(request: NextRequest) {
         JSON.stringify({
           exists: true,
           url: matchingFile.url,
-          lastModified: matchingFile.uploadedAt?.getTime() || Date.now(),
         }),
         {
           status: 200,
@@ -93,5 +92,3 @@ export async function GET(request: NextRequest) {
     )
   }
 }
-
-                                         
