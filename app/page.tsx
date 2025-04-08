@@ -38,7 +38,7 @@ export default function Home() {
   const [isBackingUp, setIsBackingUp] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null)
-  const lastModifiedRef = useRef<number>(0)
+  const lastSyncTimeRef = useRef<number>(0)
   const hasInitializedRef = useRef<boolean>(false)
 
   // Load data from localStorage
@@ -64,7 +64,7 @@ export default function Home() {
 
   // Backup function
   const performBackup = useCallback(async () => {
-    if (isSignedIn && userId && !isBackingUp) {
+    if (isSignedIn && userId && !isBackingUp && authCodes.length > 0) {
       try {
         setIsBackingUp(true)
         console.log("Performing backup for user:", userId)
@@ -74,6 +74,8 @@ export default function Home() {
           console.error("Backup failed")
         } else {
           console.log("Backup successful")
+          // Update last sync time to avoid immediate sync after backup
+          lastSyncTimeRef.current = Date.now()
         }
       } catch (error) {
         console.error("Backup failed:", error)
@@ -86,40 +88,46 @@ export default function Home() {
   // Sync function
   const syncData = useCallback(async () => {
     if (isSignedIn && userId && !isSyncing) {
-      try {
-        setIsSyncing(true)
-        console.log("Syncing data for user:", userId)
+      // Only sync if it's been more than 20 seconds since last sync
+      const now = Date.now()
+      if (now - lastSyncTimeRef.current > 20000) {
+        try {
+          setIsSyncing(true)
+          console.log("Syncing data for user:", userId)
 
-        const result = await importFromBlob(userId)
+          const result = await importFromBlob(userId)
 
-        if (result.success && result.data) {
-          // Check if the data is newer than what we have
-          if (result.lastModified && result.lastModified > lastModifiedRef.current) {
+          if (result.success && result.data) {
             try {
               const importedCodes = JSON.parse(result.data) as AuthCode[]
 
-              // Update local data
-              setAuthCodes(importedCodes)
-              localStorage.setItem("authCodes", JSON.stringify(importedCodes))
+              // Only update if we have data to import and it's different from what we have
+              if (importedCodes.length > 0) {
+                const currentCodesJson = JSON.stringify(authCodes)
+                const importedCodesJson = JSON.stringify(importedCodes)
 
-              // Update last modified time
-              lastModifiedRef.current = result.lastModified
+                if (currentCodesJson !== importedCodesJson) {
+                  console.log("Data changed, updating local storage")
+                  setAuthCodes(importedCodes)
+                  localStorage.setItem("authCodes", result.data)
+                } else {
+                  console.log("Data unchanged, no update needed")
+                }
+              }
 
-              console.log("Data synced successfully")
+              lastSyncTimeRef.current = now
             } catch (parseError) {
               console.error("Error parsing imported data:", parseError)
             }
-          } else {
-            console.log("No new data to sync")
           }
+        } catch (error) {
+          console.error("Error syncing data:", error)
+        } finally {
+          setIsSyncing(false)
         }
-      } catch (error) {
-        console.error("Error syncing data:", error)
-      } finally {
-        setIsSyncing(false)
       }
     }
-  }, [isSignedIn, userId, isSyncing])
+  }, [isSignedIn, userId, isSyncing, authCodes])
 
   // Initialize when user signs in
   useEffect(() => {
@@ -131,9 +139,9 @@ export default function Home() {
           console.log("Initializing user:", userId)
 
           // Check if user has a backup
-          const backupCheck = await checkUserBackup(userId)
+          const hasBackup = await checkUserBackup(userId)
 
-          if (backupCheck.exists) {
+          if (hasBackup) {
             // User has a backup, download it
             console.log("User has existing backup, downloading...")
             const result = await importFromBlob(userId)
@@ -144,12 +152,10 @@ export default function Home() {
 
                 // Update local data
                 setAuthCodes(importedCodes)
-                localStorage.setItem("authCodes", JSON.stringify(importedCodes))
+                localStorage.setItem("authCodes", result.data)
 
-                // Update last modified time
-                if (result.lastModified) {
-                  lastModifiedRef.current = result.lastModified
-                }
+                // Update last sync time
+                lastSyncTimeRef.current = Date.now()
 
                 toast({
                   title: "Data Restored",
@@ -498,4 +504,3 @@ export default function Home() {
     </div>
   )
 }
-
