@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     }
 
     const formData = await request.formData()
-    const file = formData.get("file") as File
+    const file = formData.get("file") as File | null
 
     if (!file) {
       return new Response(JSON.stringify({ error: "File is required" }), {
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
           headers: { "Content-Type": "application/json" },
         },
       )
-    } catch (blobError) {
+    } catch (blobError: any) {
       console.error("Blob operation error:", blobError)
       return new Response(
         JSON.stringify({
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
         },
       )
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error("Backup route error:", error)
     return new Response(
       JSON.stringify({
