@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    console.log("Backing up data for user:", userId)
+    console.log("Backing up data for user:", userId, "Data length:", data.length)
 
     // 创建一个blob
     const blob = new Blob([data], { type: "application/json" })
@@ -24,13 +24,15 @@ export async function POST(request: NextRequest) {
       addRandomSuffix: false,
     })
 
+    console.log("Backup successful, URL:", result.url)
+
     return new Response(JSON.stringify({ success: true, url: result.url }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     })
   } catch (error) {
     console.error("Error backing up user data:", error)
-    return new Response(JSON.stringify({ error: "Server error" }), {
+    return new Response(JSON.stringify({ error: "Server error", details: String(error) }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     })
