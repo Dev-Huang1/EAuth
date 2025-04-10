@@ -67,11 +67,19 @@ export default function Home() {
     if (isSignedIn && userId && !isBackingUp && authCodes.length > 0) {
       try {
         setIsBackingUp(true)
-        console.log("Performing backup for user:", userId)
+        console.log("Performing backup for user:", userId, "Auth codes count:", authCodes.length)
         const dataToBackup = JSON.stringify(authCodes)
+        console.log("Data prepared for backup, length:", dataToBackup.length)
+
         const result = await backupToBlob(dataToBackup, userId)
+
         if (!result.success) {
           console.error("Backup failed")
+          toast({
+            title: "Backup Failed",
+            description: "There was an error backing up your data. Please try again.",
+            variant: "destructive",
+          })
         } else {
           console.log("Backup successful")
           // Update last sync time to avoid immediate sync after backup
@@ -79,11 +87,23 @@ export default function Home() {
         }
       } catch (error) {
         console.error("Backup failed:", error)
+        toast({
+          title: "Backup Error",
+          description: error instanceof Error ? error.message : "Unknown error during backup",
+          variant: "destructive",
+        })
       } finally {
         setIsBackingUp(false)
       }
+    } else {
+      console.log("Skipping backup:", {
+        isSignedIn,
+        hasUserId: !!userId,
+        isBackingUp,
+        authCodesCount: authCodes.length,
+      })
     }
-  }, [isSignedIn, userId, authCodes, isBackingUp])
+  }, [isSignedIn, userId, authCodes, isBackingUp, toast])
 
   // Sync function
   const syncData = useCallback(async () => {
