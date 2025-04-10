@@ -34,12 +34,31 @@ export default function Home() {
   const [editingCode, setEditingCode] = useState<AuthCode | null>(null)
   const { toast } = useToast()
   const { theme, setTheme } = useTheme()
-  const { isSignedIn, userId, signOut } = useAuth()
+  const { isSignedIn, userId, getToken, signOut } = useAuth()
   const [isBackingUp, setIsBackingUp] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
   const syncIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const lastSyncTimeRef = useRef<number>(0)
   const hasInitializedRef = useRef<boolean>(false)
+
+  // Store Clerk JWT in localStorage when user signs in
+  useEffect(() => {
+    const storeToken = async () => {
+      if (isSignedIn && getToken) {
+        try {
+          const token = await getToken()
+          if (token) {
+            localStorage.setItem("clerk-db-jwt", token)
+            console.log("Stored Clerk JWT in localStorage")
+          }
+        } catch (error) {
+          console.error("Failed to get token:", error)
+        }
+      }
+    }
+
+    storeToken()
+  }, [isSignedIn, getToken])
 
   // Load data from localStorage
   useEffect(() => {
@@ -157,59 +176,91 @@ export default function Home() {
 
         try {
           console.log("Initializing user:", userId)
+          setIsSyncing(true)
 
-          // Check if user has a backup
+          // 检查用户是否有备份
           const hasBackup = await checkUserBackup(userId)
+          console.log("User has backup:", hasBackup)
 
           if (hasBackup) {
-            // User has a backup, download it
+            // 用户有备份，下载它
             console.log("User has existing backup, downloading...")
-            const result = await importFromBlob(userId)
+            try {
+              const result = await importFromBlob(userId)
 
-            if (result.success && result.data) {
-              try {
-                const importedCodes = JSON.parse(result.data) as AuthCode[]
+              if (result.success && result.data) {
+                try {
+                  console.log("Successfully imported data, length:", result.data.length)
+                  const importedCodes = JSON.parse(result.data) as AuthCode[]
+                  console.log("Parsed imported codes, count:", importedCodes.length)
 
-                // Update local data
-                setAuthCodes(importedCodes)
-                localStorage.setItem("authCodes", result.data)
+                  // 更新本地数据
+                  setAuthCodes(importedCodes)
+                  localStorage.setItem("authCodes", result.data)
 
-                // Update last sync time
-                lastSyncTimeRef.current = Date.now()
+                  // 更新最后同步时间
+                  lastSyncTimeRef.current = Date.now()
 
+                  toast({
+                    title: "数据已恢复",
+                    description: "您的验证码已从备份中恢复。",
+                  })
+                } catch (parseError) {
+                  console.error("Error parsing imported data:", parseError)
+                  toast({
+                    title: "导入错误",
+                    description: "解析导入的数据时出错。",
+                    variant: "destructive",
+                  })
+                }
+              } else {
+                console.error("Failed to import data:", result)
                 toast({
-                  title: "Data Restored",
-                  description: "Your authentication codes have been restored from backup.",
+                  title: "导入失败",
+                  description: "无法从备份中恢复数据。",
+                  variant: "destructive",
                 })
-              } catch (parseError) {
-                console.error("Error parsing imported data:", parseError)
               }
+            } catch (importError) {
+              console.error("Error during import:", importError)
+              toast({
+                title: "导入错误",
+                description: "导入数据时发生错误。",
+                variant: "destructive",
+              })
             }
           } else {
-            // New user, backup current data if any
+            // 新用户，如果有的话，备份当前数据
             console.log("New user, backing up current data if any...")
             if (authCodes.length > 0) {
               await performBackup()
             }
           }
 
-          // Set up sync interval
+          // 设置同步间隔
           if (syncIntervalRef.current) {
             clearInterval(syncIntervalRef.current)
           }
 
           syncIntervalRef.current = setInterval(() => {
             syncData()
-          }, 20000) // Sync every 20 seconds
+          }, 30000) // 每30秒同步一次
         } catch (error) {
           console.error("Error initializing user:", error)
+          toast({
+            title: "��始化错误",
+            description: "初始化用户数据时出错。",
+            variant: "destructive",
+          })
+        } finally {
+          setIsSyncing(false)
         }
       }
     }
 
     initializeUser()
 
-    // Cleanup on unmount or when user signs out
+    // 在卸载或用户退出登录时清理
     return () => {
       if (syncIntervalRef.current) {
         clearInterval(syncIntervalRef.current)
