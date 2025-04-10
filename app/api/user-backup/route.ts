@@ -6,42 +6,36 @@ export async function POST(request: NextRequest) {
   try {
     console.log("User backup API called")
 
-    const { userId } = auth()
-    console.log("Auth userId:", userId)
+    // Get authentication info
+    const authInfo = auth()
+    console.log("Auth info:", JSON.stringify(authInfo, null, 2))
 
-    if (!userId) {
+    // Check if user is authenticated
+    if (!authInfo.userId) {
       console.error("No userId from auth")
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      return new Response(JSON.stringify({ error: "Unauthorized - No user ID" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
       })
     }
 
+    const userId = authInfo.userId
+    console.log("Authenticated userId:", userId)
+
     console.log("Parsing form data")
     const formData = await request.formData()
     const file = formData.get("file") as File
-    const requestUserId = formData.get("userId") as string
 
     console.log("Form data parsed:", {
       hasFile: !!file,
       fileType: file?.type,
       fileSize: file?.size,
-      requestUserId,
     })
 
     if (!file) {
       console.error("No file in request")
       return new Response(JSON.stringify({ error: "File is required" }), {
         status: 400,
-        headers: { "Content-Type": "application/json" },
-      })
-    }
-
-    // Verify the requested userId matches the authenticated userId
-    if (requestUserId && requestUserId !== userId) {
-      console.error("User ID mismatch:", requestUserId, "vs", userId)
-      return new Response(JSON.stringify({ error: "Unauthorized access to another user's data" }), {
-        status: 403,
         headers: { "Content-Type": "application/json" },
       })
     }
