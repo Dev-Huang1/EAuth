@@ -219,7 +219,7 @@ export default function Home() {
                   console.error("Failed to import data:", result)
                   toast({
                     title: "导入失败",
-                    description: "无法从备份中恢复数据。",
+                    description: "无法从备份中恢复数据。请尝试手动导入。",
                     variant: "destructive",
                   })
                 }
@@ -227,7 +227,7 @@ export default function Home() {
                 console.error("Error during import:", importError)
                 toast({
                   title: "导入错误",
-                  description: "导入数据时发生错误。",
+                  description: "导入数据时发生错误。请尝试手动导入。",
                   variant: "destructive",
                 })
               }
@@ -242,7 +242,7 @@ export default function Home() {
             console.error("Error checking for backup:", checkError)
             toast({
               title: "检查备份错误",
-              description: "检查备份时发生错误。",
+              description: "检查备份时发生错误。将使用本地数据。",
               variant: "destructive",
             })
           }
@@ -259,7 +259,7 @@ export default function Home() {
           console.error("Error initializing user:", error)
           toast({
             title: "初始化错误",
-            description: "初始化用户数据时出错。",
+            description: "初始化用户数据时出错。将使用本地数据。",
             variant: "destructive",
           })
         } finally {
