@@ -15,6 +15,7 @@ export default authMiddleware({
     "/api/direct-import",
     "/api/fetch-backup",
     "/api/debug",
+    "/api/debug-check",
     "/api/auth-test",
   ],
 })
