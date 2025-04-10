@@ -12,6 +12,7 @@ export default authMiddleware({
     "/api/user-import",
     "/api/user-check",
     "/api/direct-backup",
+    "/api/direct-import",
     "/api/auth-test",
   ],
 })
