@@ -6,7 +6,24 @@ export async function POST(request: NextRequest) {
     console.log("Direct backup API called")
 
     // Parse JSON data
-    const { userId, data } = await request.json()
+    let userId, data
+    try {
+      const body = await request.json()
+      userId = body.userId
+      data = body.data
+    } catch (parseError) {
+      console.error("Error parsing request body:", parseError)
+      return new Response(
+        JSON.stringify({
+          error: "Failed to parse request body",
+          details: parseError instanceof Error ? parseError.message : String(parseError),
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      )
+    }
 
     console.log("Request parsed:", {
       hasUserId: !!userId,
@@ -86,4 +103,4 @@ export async function POST(request: NextRequest) {
       },
     )
   }
-          }
+}
