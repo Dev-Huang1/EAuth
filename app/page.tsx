@@ -13,7 +13,6 @@ import { Moon, Sun, Plus } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { encryptData } from "@/lib/encryption"
-import { backupToBlob, importFromBlob, checkUserBackup } from "@/lib/blob-service"
 import { useAuth } from "@clerk/nextjs"
 
 interface AuthCode {
@@ -41,25 +40,6 @@ export default function Home() {
   const lastSyncTimeRef = useRef<number>(0)
   const hasInitializedRef = useRef<boolean>(false)
 
-  // Store Clerk JWT in localStorage when user signs in
-  useEffect(() => {
-    const storeToken = async () => {
-      if (isSignedIn && getToken) {
-        try {
-          const token = await getToken()
-          if (token) {
-            localStorage.setItem("clerk-db-jwt", token)
-            console.log("Stored Clerk JWT in localStorage")
-          }
-        } catch (error) {
-          console.error("Failed to get token:", error)
-        }
-      }
-    }
-
-    storeToken()
-  }, [isSignedIn, getToken])
-
   // Load data from localStorage
   useEffect(() => {
     const storedCodes = localStorage.getItem("authCodes")
@@ -81,263 +61,179 @@ export default function Home() {
     }
   }, [])
 
-  // Backup function
-  const performBackup = useCallback(async () => {
-    if (isSignedIn && userId && !isBackingUp && authCodes.length > 0) {
-      try {
-        setIsBackingUp(true)
-        console.log("Performing backup for user:", userId, "Auth codes count:", authCodes.length)
-        const dataToBackup = JSON.stringify(authCodes)
-        console.log("Data prepared for backup, length:", dataToBackup.length)
+  // 备份数据到服务器
+  const backupData = useCallback(async () => {
+    if (!isSignedIn || !userId || isBackingUp || authCodes.length === 0) return
 
-        const result = await backupToBlob(dataToBackup, userId)
+    try {
+      setIsBackingUp(true)
+      console.log("Backing up data for user:", userId)
 
-        if (!result.success) {
-          console.error("Backup failed")
-          toast({
-            title: "Backup Failed",
-            description: "There was an error backing up your data. Please try again.",
-            variant: "destructive",
-          })
-        } else {
-          console.log("Backup successful")
-          // Update last sync time to avoid immediate sync after backup
-          lastSyncTimeRef.current = Date.now()
-        }
-      } catch (error) {
-        console.error("Backup failed:", error)
-        toast({
-          title: "Backup Error",
-          description: error instanceof Error ? error.message : "Unknown error during backup",
-          variant: "destructive",
-        })
-      } finally {
-        setIsBackingUp(false)
-      }
-    } else {
-      console.log("Skipping backup:", {
-        isSignedIn,
-        hasUserId: !!userId,
-        isBackingUp,
-        authCodesCount: authCodes.length,
+      const response = await fetch("/api/user-backup", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId,
+          data: JSON.stringify(authCodes),
+        }),
       })
-    }
-  }, [isSignedIn, userId, authCodes, isBackingUp, toast])
 
-  // Sync function
-  const syncData = useCallback(async () => {
-    if (isSignedIn && userId && !isSyncing) {
-      // Only sync if it's been more than 20 seconds since last sync
-      const now = Date.now()
-      if (now - lastSyncTimeRef.current > 20000) {
-        try {
-          setIsSyncing(true)
-          console.log("Syncing data for user:", userId)
-
-          const result = await importFromBlob(userId)
-
-          if (result.success && result.data) {
-            try {
-              const importedCodes = JSON.parse(result.data) as AuthCode[]
-
-              // Only update if we have data to import and it's different from what we have
-              if (importedCodes.length > 0) {
-                const currentCodesJson = JSON.stringify(authCodes)
-                const importedCodesJson = JSON.stringify(importedCodes)
-
-                if (currentCodesJson !== importedCodesJson) {
-                  console.log("Data changed, updating local storage")
-                  setAuthCodes(importedCodes)
-                  localStorage.setItem("authCodes", result.data)
-                } else {
-                  console.log("Data unchanged, no update needed")
-                }
-              }
-
-              lastSyncTimeRef.current = now
-            } catch (parseError) {
-              console.error("Error parsing imported data:", parseError)
-            }
-          }
-        } catch (error) {
-          console.error("Error syncing data:", error)
-        } finally {
-          setIsSyncing(false)
-        }
+      if (!response.ok) {
+        throw new Error("Backup failed")
       }
+
+      const result = await response.json()
+      console.log("Backup successful:", result)
+      lastSyncTimeRef.current = Date.now()
+    } catch (error) {
+      console.error("Backup error:", error)
+      toast({
+        title: "备份失败",
+        description: "无法备份您的数据。请稍后再试。",
+        variant: "destructive",
+      })
+    } finally {
+      setIsBackingUp(false)
     }
-  }, [isSignedIn, userId, isSyncing, authCodes])
+  }, [isSignedIn, userId, isBackingUp, authCodes, toast])
 
-  // Initialize when user signs in
-  useEffect(() => {
-    const initializeUser = async () => {
-      if (isSignedIn && userId && !hasInitializedRef.current) {
-        hasInitializedRef.current = true
+  // 从服务器获取数据
+  const fetchData = useCallback(async () => {
+    if (!isSignedIn || !userId || isSyncing) return
 
+    try {
+      setIsSyncing(true)
+      console.log("Fetching data for user:", userId)
+
+      const response = await fetch(`/api/user-data?userId=${encodeURIComponent(userId)}`)
+      if (!response.ok) {
+        throw new Error("Failed to fetch data")
+      }
+
+      const result = await response.json()
+
+      if (result.exists && result.data) {
         try {
-          console.log("Initializing user:", userId)
-          setIsSyncing(true)
+          const parsedData = JSON.parse(result.data)
+          console.log("Fetched data successfully:", parsedData.length, "items")
 
-          // 检查用户是否有备份
-          try {
-            console.log("Checking if user has backup")
-            const checkResult = await checkUserBackup(userId)
-            console.log("Check result:", checkResult)
+          // 更新本地存储
+          setAuthCodes(parsedData)
+          localStorage.setItem("authCodes", result.data)
 
-            if (checkResult.exists) {
-              // 用户有备份，下载它
-              console.log("User has existing backup, downloading...")
-              try {
-                // 使用URL（如果有）或userId导入数据
-                const result = await importFromBlob(userId, checkResult.url)
-
-                if (result.success && result.data) {
-                  try {
-                    console.log("Successfully imported data, length:", result.data.length)
-                    const importedCodes = JSON.parse(result.data) as AuthCode[]
-                    console.log("Parsed imported codes, count:", importedCodes.length)
-
-                    // 更新本地数据
-                    setAuthCodes(importedCodes)
-                    localStorage.setItem("authCodes", result.data)
-
-                    // 更新最后同步时间
-                    lastSyncTimeRef.current = Date.now()
-
-                    toast({
-                      title: "数据已恢复",
-                      description: "您的验证码已从备份中恢复。",
-                    })
-                  } catch (parseError) {
-                    console.error("Error parsing imported data:", parseError)
-                    toast({
-                      title: "导入错误",
-                      description: "解析导入的数据时出错。",
-                      variant: "destructive",
-                    })
-                  }
-                } else {
-                  console.error("Failed to import data:", result)
-                  toast({
-                    title: "导入失败",
-                    description: "无法从备份中恢复数据。请尝试手动导入。",
-                    variant: "destructive",
-                  })
-                }
-              } catch (importError) {
-                console.error("Error during import:", importError)
-                toast({
-                  title: "导入错误",
-                  description: "导入数据时发生错误。请尝试手动导入。",
-                  variant: "destructive",
-                })
-              }
-            } else {
-              // 新用户，如果有的话，备份当前数据
-              console.log("New user, backing up current data if any...")
-              if (authCodes.length > 0) {
-                await performBackup()
-              }
-            }
-          } catch (checkError) {
-            console.error("Error checking for backup:", checkError)
-            toast({
-              title: "检查备份错误",
-              description: "检查备份时发生错误。将使用本地数据。",
-              variant: "destructive",
-            })
-          }
-
-          // 设置同步间隔
-          if (syncIntervalRef.current) {
-            clearInterval(syncIntervalRef.current)
-          }
-
-          syncIntervalRef.current = setInterval(() => {
-            syncData()
-          }, 30000) // 每30秒同步一次
-        } catch (error) {
-          console.error("Error initializing user:", error)
           toast({
-            title: "初始化错误",
-            description: "初始化用户数据时出错。将使用本地数据。",
+            title: "数据已同步",
+            description: "您的验证码已从云端同步。",
+          })
+
+          lastSyncTimeRef.current = Date.now()
+        } catch (parseError) {
+          console.error("Error parsing data:", parseError)
+          toast({
+            title: "数据解析错误",
+            description: "无法解析从服务器获取的数据。",
             variant: "destructive",
           })
-        } finally {
-          setIsSyncing(false)
+        }
+      } else {
+        console.log("No data found for user")
+        // 如果服务器上没有数据，但本地有数据，则备份本地数据
+        if (authCodes.length > 0) {
+          backupData()
         }
       }
+    } catch (error) {
+      console.error("Fetch error:", error)
+      toast({
+        title: "同步失败",
+        description: "无法从服务器获取您的数据。",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSyncing(false)
+    }
+  }, [isSignedIn, userId, isSyncing, authCodes, toast, backupData])
+
+  // 初始化用户数据
+  useEffect(() => {
+    if (isSignedIn && userId && !hasInitializedRef.current) {
+      hasInitializedRef.current = true
+
+      // 获取用户数据
+      fetchData()
+
+      // 设置定期同步
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current)
+      }
+
+      syncIntervalRef.current = setInterval(() => {
+        // 每30分钟同步一次
+        if (Date.now() - lastSyncTimeRef.current > 30 * 60 * 1000) {
+          fetchData()
+        }
+      }, 60000) // 每分钟检查一次
     }
 
-    initializeUser()
-
-    // 在卸载或用户退出登录时清理
     return () => {
       if (syncIntervalRef.current) {
         clearInterval(syncIntervalRef.current)
-        syncIntervalRef.current = null
       }
     }
-  }, [isSignedIn, userId, authCodes, performBackup, syncData, toast])
+  }, [isSignedIn, userId, fetchData])
 
-  // Handle data changes and trigger backup
+  // 处理数据变更
   const handleDataChange = useCallback(
     (newCodes: AuthCode[]) => {
       setAuthCodes(newCodes)
       localStorage.setItem("authCodes", JSON.stringify(newCodes))
 
-      // Trigger backup if signed in
+      // 如果已登录，备份数据
       if (isSignedIn && userId) {
-        performBackup()
+        backupData()
       }
     },
-    [isSignedIn, userId, performBackup],
+    [isSignedIn, userId, backupData],
   )
 
-  // Handle group changes and trigger backup
-  const handleGroupChange = useCallback(
-    (newGroups: string[]) => {
-      setGroups(newGroups)
-      localStorage.setItem("groups", JSON.stringify(newGroups))
-
-      // Trigger backup if signed in
-      if (isSignedIn && userId) {
-        performBackup()
-      }
-    },
-    [isSignedIn, userId, performBackup],
-  )
+  // 处理分组变更
+  const handleGroupChange = useCallback((newGroups: string[]) => {
+    setGroups(newGroups)
+    localStorage.setItem("groups", JSON.stringify(newGroups))
+  }, [])
 
   const handleLogout = async () => {
-    // Backup data before signing out
+    // 退出前备份数据
     if (isSignedIn && userId) {
-      await performBackup()
+      await backupData()
     }
 
-    // Clear sync interval
+    // 清除同步定时器
     if (syncIntervalRef.current) {
       clearInterval(syncIntervalRef.current)
       syncIntervalRef.current = null
     }
 
-    // Reset initialization flag
+    // 重置初始化标志
     hasInitializedRef.current = false
 
     await signOut()
     toast({
-      title: "Signed Out",
-      description: "You have been signed out.",
+      title: "已退出登录",
+      description: "您已成功退出登录。",
     })
   }
 
   const addAuthCode = (issuer: string, account: string, secret: string, group: string, service: string) => {
-    // Generate a random key for encrypting this specific secret
+    // 生成随机密钥用于加密
     const encryptionKey = Math.random().toString(36).substring(2, 15)
 
-    // Encrypt the secret
+    // 加密密钥
     const encryptedSecret = encryptData(secret, encryptionKey)
 
-    // Store the encryption key in the secret field, separated by a delimiter
+    // 存储加密密钥和加密后的密钥
     const storedSecret = `${encryptionKey}:${encryptedSecret}`
 
     const newCode: AuthCode = {
@@ -358,15 +254,15 @@ export default function Home() {
     const existingCode = authCodes.find((code) => code.id === updatedCode.id)
 
     if (existingCode) {
-      // Check if the secret has changed
+      // 检查密钥是否已更改
       if (existingCode.secret !== updatedCode.secret) {
-        // Generate a new encryption key
+        // 生成新的加密密钥
         const encryptionKey = Math.random().toString(36).substring(2, 15)
 
-        // Encrypt the new secret
+        // 加密新密钥
         const encryptedSecret = encryptData(updatedCode.secret, encryptionKey)
 
-        // Update the secret with the new key and encrypted value
+        // 更新密钥
         updatedCode.secret = `${encryptionKey}:${encryptedSecret}`
       }
     }
@@ -397,7 +293,7 @@ export default function Home() {
       const updatedGroups = groups.filter((g) => g !== groupName)
       handleGroupChange(updatedGroups)
 
-      // Move auth codes from the removed group to "All"
+      // 将被删除分组中的验证码移到"All"分组
       const updatedCodes = authCodes.map((code) => (code.group === groupName ? { ...code, group: "All" } : code))
       handleDataChange(updatedCodes)
 
@@ -451,16 +347,16 @@ export default function Home() {
             }))
             handleDataChange(newAuthCodes)
             toast({
-              title: "Import Successful",
-              description: "Your auth codes have been imported.",
+              title: "导入成功",
+              description: "您的验证码已成功导入。",
             })
           } else {
             throw new Error("Invalid file format")
           }
         } catch (error) {
           toast({
-            title: "Import Failed",
-            description: "There was an error importing your auth codes.",
+            title: "导入失败",
+            description: "导入验证码时出错。",
             variant: "destructive",
           })
         }
