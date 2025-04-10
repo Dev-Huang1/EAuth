@@ -5,20 +5,18 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get("userId")
-    const authToken = request.headers.get("x-auth-token")
 
     console.log("Import API called for user:", userId)
-    console.log("Has auth token:", !!authToken)
     console.log("Request headers:", Object.fromEntries(request.headers.entries()))
 
     if (!userId) {
-      return new Response(JSON.stringify({ error: "User ID parameter is required" }), {
+      return new Response(JSON.stringify({ error: "User ID parameter is required", success: false }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       })
     }
 
-    // Try to list all blobs with the eauth prefix
+    // 尝试列出所有带有eauth前缀的blob
     try {
       console.log("Listing blobs with prefix 'eauth/'")
       const { blobs } = await list({ prefix: "eauth/" })
@@ -33,12 +31,12 @@ export async function GET(request: NextRequest) {
 
       console.log(`Found ${blobs.length} backup files`)
 
-      // Log all found blobs for debugging
+      // 记录所有找到的blob以进行调试
       blobs.forEach((blob, index) => {
         console.log(`Blob ${index + 1}:`, blob.pathname, blob.url)
       })
 
-      // Find a file that exactly matches the user ID
+      // 找到与用户ID完全匹配的文件
       const matchingFile = blobs.find((blob) => {
         const filename = blob.pathname.split("/").pop() || ""
         return filename === `${userId}.json`
@@ -54,12 +52,17 @@ export async function GET(request: NextRequest) {
 
       console.log("Found matching file:", matchingFile.pathname, matchingFile.url)
 
-      // Get the file content
+      // 获取文件内容
       try {
         console.log("Fetching file content from URL:", matchingFile.url)
-        const fileContent = await fetch(matchingFile.url, {
+
+        // 添加时间戳以避免缓存问题
+        const fetchUrl = `${matchingFile.url}?t=${Date.now()}`
+        const fileContent = await fetch(fetchUrl, {
           headers: {
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            Pragma: "no-cache",
+            Expires: "0",
           },
         })
 
@@ -76,6 +79,24 @@ export async function GET(request: NextRequest) {
         const data = await fileContent.text()
         console.log("Successfully retrieved data, length:", data.length)
 
+        // 验证数据是否为有效的JSON
+        try {
+          JSON.parse(data)
+        } catch (jsonError) {
+          console.error("Retrieved data is not valid JSON:", jsonError)
+          return new Response(
+            JSON.stringify({
+              error: "Retrieved data is not valid JSON",
+              success: false,
+              dataPreview: data.substring(0, 100) + "...",
+            }),
+            {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            },
+          )
+        }
+
         return new Response(
           JSON.stringify({
             data,
@@ -83,7 +104,12 @@ export async function GET(request: NextRequest) {
           }),
           {
             status: 200,
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "Cache-Control": "no-cache, no-store, must-revalidate",
+              Pragma: "no-cache",
+              Expires: "0",
+            },
           },
         )
       } catch (fetchError) {
