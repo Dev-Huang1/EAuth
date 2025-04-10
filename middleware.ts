@@ -7,11 +7,12 @@ export default authMiddleware({
     "/init",
     "/sign-in",
     "/sign-up",
-    "/api/backup", // Keep the old route public for backward compatibility
+    "/api/test-blob", // Make the test route public
   ],
+  // Make sure API routes are properly authenticated
+  apiRoutes: ["/api(.*)"],
 })
 
 export const config = {
   matcher: ["/((?!.*\\..*|_next).*)", "/", "/(api|trpc)(.*)"],
 }
-
