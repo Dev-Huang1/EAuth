@@ -2,22 +2,7 @@ import { authMiddleware } from "@clerk/nextjs"
 
 export default authMiddleware({
   // Public routes that don't require authentication
-  publicRoutes: [
-    "/",
-    "/init",
-    "/sign-in",
-    "/sign-up",
-    "/api/test-blob",
-    "/api/user-backup",
-    "/api/user-import",
-    "/api/user-check",
-    "/api/direct-backup",
-    "/api/direct-import",
-    "/api/fetch-backup",
-    "/api/debug",
-    "/api/debug-check",
-    "/api/auth-test",
-  ],
+  publicRoutes: ["/", "/init", "/sign-in", "/sign-up", "/api/user-data", "/api/user-backup"],
 })
 
 export const config = {
