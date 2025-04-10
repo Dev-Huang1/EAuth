@@ -81,7 +81,9 @@ export default function Home() {
       })
 
       if (!response.ok) {
-        throw new Error("Backup failed")
+        const errorText = await response.text()
+        console.error("Backup failed:", response.status, errorText)
+        throw new Error(`Backup failed: ${response.status} ${errorText}`)
       }
 
       const result = await response.json()
@@ -107,48 +109,82 @@ export default function Home() {
       setIsSyncing(true)
       console.log("Fetching data for user:", userId)
 
-      const response = await fetch(`/api/user-data?userId=${encodeURIComponent(userId)}`)
-      if (!response.ok) {
-        throw new Error("Failed to fetch data")
-      }
+      // 构建URL并添加时间戳以避免缓存
+      const url = `/api/user-data?userId=${encodeURIComponent(userId)}&t=${Date.now()}`
+      console.log("Fetching from URL:", url)
 
-      const result = await response.json()
+      try {
+        const response = await fetch(url, {
+          method: "GET",
+          headers: {
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            Pragma: "no-cache",
+            Expires: "0",
+          },
+        })
 
-      if (result.exists && result.data) {
+        console.log("Fetch response status:", response.status)
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error("Fetch failed:", response.status, errorText)
+          throw new Error(`Fetch failed: ${response.status} ${errorText}`)
+        }
+
+        const contentType = response.headers.get("content-type")
+        console.log("Response content type:", contentType)
+
+        let result
         try {
-          const parsedData = JSON.parse(result.data)
-          console.log("Fetched data successfully:", parsedData.length, "items")
-
-          // 更新本地存储
-          setAuthCodes(parsedData)
-          localStorage.setItem("authCodes", result.data)
-
-          toast({
-            title: "数据已同步",
-            description: "您的验证码已从云端同步。",
-          })
-
-          lastSyncTimeRef.current = Date.now()
+          const text = await response.text()
+          console.log("Response text (first 100 chars):", text.substring(0, 100))
+          result = JSON.parse(text)
         } catch (parseError) {
-          console.error("Error parsing data:", parseError)
-          toast({
-            title: "数据解析错误",
-            description: "无法解析从服务器获取的数据。",
-            variant: "destructive",
-          })
+          console.error("Error parsing response:", parseError)
+          throw new Error("Failed to parse response")
         }
-      } else {
-        console.log("No data found for user")
-        // 如果服务器上没有数据，但本地有数据，则备份本地数据
-        if (authCodes.length > 0) {
-          backupData()
+
+        console.log("Parsed result:", result)
+
+        if (result.exists && result.data) {
+          try {
+            const parsedData = JSON.parse(result.data)
+            console.log("Fetched data successfully:", parsedData.length, "items")
+
+            // 更新本地存储
+            setAuthCodes(parsedData)
+            localStorage.setItem("authCodes", result.data)
+
+            toast({
+              title: "数据已同步",
+              description: "您的验证码已从云端同步。",
+            })
+
+            lastSyncTimeRef.current = Date.now()
+          } catch (parseError) {
+            console.error("Error parsing data:", parseError)
+            toast({
+              title: "数据解析错误",
+              description: "无法解析从服务器获取的数据。",
+              variant: "destructive",
+            })
+          }
+        } else {
+          console.log("No data found for user")
+          // 如果服务器上没有数据，但本地有数据，则备份本地数据
+          if (authCodes.length > 0) {
+            backupData()
+          }
         }
+      } catch (fetchError) {
+        console.error("Fetch error:", fetchError)
+        throw fetchError
       }
     } catch (error) {
       console.error("Fetch error:", error)
       toast({
         title: "同步失败",
-        description: "无法从服务器获取您的数据。",
+        description: error instanceof Error ? error.message : "无法从服务器获取您的数据。",
         variant: "destructive",
       })
     } finally {
@@ -158,24 +194,33 @@ export default function Home() {
 
   // 初始化用户数据
   useEffect(() => {
-    if (isSignedIn && userId && !hasInitializedRef.current) {
-      hasInitializedRef.current = true
+    const initializeUser = async () => {
+      if (isSignedIn && userId && !hasInitializedRef.current) {
+        hasInitializedRef.current = true
+        console.log("Initializing user:", userId)
 
-      // 获取用户数据
-      fetchData()
+        try {
+          // 获取用户数据
+          await fetchData()
 
-      // 设置定期同步
-      if (syncIntervalRef.current) {
-        clearInterval(syncIntervalRef.current)
-      }
+          // 设置定期同步
+          if (syncIntervalRef.current) {
+            clearInterval(syncIntervalRef.current)
+          }
 
-      syncIntervalRef.current = setInterval(() => {
-        // 每30分钟同步一次
-        if (Date.now() - lastSyncTimeRef.current > 30 * 60 * 1000) {
-          fetchData()
+          syncIntervalRef.current = setInterval(() => {
+            // 每30分钟同步一次
+            if (Date.now() - lastSyncTimeRef.current > 30 * 60 * 1000) {
+              fetchData()
+            }
+          }, 60000) // 每分钟检查一次
+        } catch (error) {
+          console.error("Error initializing user:", error)
         }
-      }, 60000) // 每分钟检查一次
+      }
     }
+
+    initializeUser()
 
     return () => {
       if (syncIntervalRef.current) {
