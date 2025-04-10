@@ -8,6 +8,35 @@ export async function backupToBlob(data: string, userId: string): Promise<{ url:
 
     console.log("Starting backup for user:", userId, "Data length:", data.length)
 
+    // Try direct backup first (JSON approach)
+    try {
+      console.log("Trying direct backup API")
+      const directResponse = await fetch("/api/direct-backup", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId,
+          data,
+        }),
+      })
+
+      console.log("Direct backup response status:", directResponse.status)
+
+      if (directResponse.ok) {
+        const result = await directResponse.json()
+        console.log("Direct backup successful, result:", result)
+        return { url: result.url || "", success: true }
+      }
+
+      console.error("Direct backup failed, falling back to FormData approach")
+    } catch (directError) {
+      console.error("Error with direct backup:", directError)
+      console.log("Falling back to FormData approach")
+    }
+
+    // Fall back to FormData approach
     // Create a blob with the data
     const blob = new Blob([data], { type: "application/json" })
     console.log("Created blob:", blob.size, "bytes, type:", blob.type)
@@ -29,6 +58,7 @@ export async function backupToBlob(data: string, userId: string): Promise<{ url:
     const response = await fetch("/api/user-backup", {
       method: "POST",
       body: formData,
+      // Don't set Content-Type header, let the browser set it automatically for FormData
       headers: {
         "x-auth-token": authToken,
       },
@@ -51,7 +81,7 @@ export async function backupToBlob(data: string, userId: string): Promise<{ url:
   }
 }
 
-// Function to import data from Vercel Blob
+// Function to import data from Vercel Blob - only use API routes, no direct blob access
 export async function importFromBlob(userId: string): Promise<{ data: string; success: boolean }> {
   try {
     if (!userId) {
@@ -64,59 +94,36 @@ export async function importFromBlob(userId: string): Promise<{ data: string; su
     // Get auth token from localStorage if available
     const authToken = localStorage.getItem("clerk-db-jwt") || "anonymous"
 
-    // Try API route first
-    try {
-      const apiResponse = await fetch(`/api/user-import?userId=${encodeURIComponent(userId)}`, {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          "Cache-Control": "no-cache",
-          "x-auth-token": authToken,
-        },
-      })
+    // Only use API route, don't try direct blob access
+    const apiResponse = await fetch(`/api/user-import?userId=${encodeURIComponent(userId)}`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "Cache-Control": "no-cache",
+        "x-auth-token": authToken,
+      },
+    })
 
-      console.log("API import response status:", apiResponse.status)
+    console.log("API import response status:", apiResponse.status)
 
-      if (!apiResponse.ok) {
-        throw new Error(`API import failed: ${apiResponse.statusText}`)
-      }
-
-      const result = await apiResponse.json()
-
-      if (!result.data) {
-        throw new Error("No data returned from import API")
-      }
-
-      return { data: result.data, success: true }
-    } catch (apiError) {
-      console.error("Error with API import:", apiError)
-
-      // Fall back to direct fetch if API fails
-      const blobUrl = `https://public.blob.vercel-storage.com/eauth/${userId}.json`
-
-      const response = await fetch(blobUrl, {
-        method: "GET",
-        headers: {
-          "Cache-Control": "no-cache",
-        },
-      })
-
-      console.log("Direct blob fetch response status:", response.status)
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch blob: ${response.statusText}`)
-      }
-
-      const data = await response.text()
-      return { data, success: true }
+    if (!apiResponse.ok) {
+      throw new Error(`API import failed: ${apiResponse.statusText}`)
     }
+
+    const result = await apiResponse.json()
+
+    if (!result.data) {
+      throw new Error("No data returned from import API")
+    }
+
+    return { data: result.data, success: true }
   } catch (error) {
     console.error("Error importing data:", error)
     return { data: "", success: false }
   }
 }
 
-// Function to check if a user has a backup
+// Function to check if a user has a backup - only use API routes, no direct blob access
 export async function checkUserBackup(userId: string): Promise<boolean> {
   try {
     if (!userId) {
@@ -126,40 +133,24 @@ export async function checkUserBackup(userId: string): Promise<boolean> {
     // Get auth token from localStorage if available
     const authToken = localStorage.getItem("clerk-db-jwt") || "anonymous"
 
-    // Try API route first
-    try {
-      const apiResponse = await fetch(`/api/user-check?userId=${encodeURIComponent(userId)}`, {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          "Cache-Control": "no-cache",
-          "x-auth-token": authToken,
-        },
-      })
+    // Only use API route, don't try direct blob access
+    const apiResponse = await fetch(`/api/user-check?userId=${encodeURIComponent(userId)}`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "Cache-Control": "no-cache",
+        "x-auth-token": authToken,
+      },
+    })
 
-      console.log("API check response status:", apiResponse.status)
+    console.log("API check response status:", apiResponse.status)
 
-      if (!apiResponse.ok) {
-        throw new Error(`API check failed: ${apiResponse.statusText}`)
-      }
-
-      const result = await apiResponse.json()
-      return result.exists === true
-    } catch (apiError) {
-      console.error("Error with API check:", apiError)
-
-      // Fall back to direct fetch if API fails
-      const blobUrl = `https://public.blob.vercel-storage.com/eauth/${userId}.json`
-
-      const response = await fetch(blobUrl, {
-        method: "HEAD",
-        headers: {
-          "Cache-Control": "no-cache",
-        },
-      })
-
-      return response.ok
+    if (!apiResponse.ok) {
+      throw new Error(`API check failed: ${apiResponse.statusText}`)
     }
+
+    const result = await apiResponse.json()
+    return result.exists === true
   } catch (error) {
     console.error("Error checking user backup:", error)
     return false
