@@ -6,17 +6,24 @@ export async function backupToBlob(data: string, userId: string): Promise<{ url:
       return { url: "", success: false }
     }
 
+    console.log("Starting backup for user:", userId, "Data length:", data.length)
+
     // Create a blob with the data
     const blob = new Blob([data], { type: "application/json" })
+    console.log("Created blob:", blob.size, "bytes, type:", blob.type)
 
     // Create a file from the blob
     const file = new File([blob], `${userId}.json`, { type: "application/json" })
+    console.log("Created file:", file.name, "size:", file.size)
 
     // Create form data
     const formData = new FormData()
     formData.append("file", file)
+    formData.append("userId", userId)
+    console.log("FormData created with file and userId")
 
     // Send the request to the user-backup endpoint
+    console.log("Sending backup request to /api/user-backup")
     const response = await fetch("/api/user-backup", {
       method: "POST",
       body: formData,
@@ -27,10 +34,11 @@ export async function backupToBlob(data: string, userId: string): Promise<{ url:
     if (!response.ok) {
       const errorText = await response.text()
       console.error("Backup error response:", errorText)
-      throw new Error(`Backup failed with status ${response.status}`)
+      throw new Error(`Backup failed with status ${response.status}: ${errorText}`)
     }
 
     const result = await response.json()
+    console.log("Backup successful, result:", result)
     return { url: result.url || "", success: true }
   } catch (error) {
     console.error("Error backing up data:", error)
