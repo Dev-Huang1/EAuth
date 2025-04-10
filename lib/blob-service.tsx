@@ -19,14 +19,19 @@ export async function backupToBlob(data: string, userId: string): Promise<{ url:
     // Create form data
     const formData = new FormData()
     formData.append("file", file)
+    formData.append("userId", userId)
+
+    // Get auth token from localStorage if available
+    const authToken = localStorage.getItem("clerk-db-jwt") || "anonymous"
 
     // Send the request to the user-backup endpoint
     console.log("Sending backup request to /api/user-backup")
     const response = await fetch("/api/user-backup", {
       method: "POST",
       body: formData,
-      // Include credentials to send auth cookies
-      credentials: "include",
+      headers: {
+        "x-auth-token": authToken,
+      },
     })
 
     console.log("Backup response status:", response.status)
@@ -56,15 +61,18 @@ export async function importFromBlob(userId: string): Promise<{ data: string; su
 
     console.log("Starting import for user:", userId)
 
-    // Try API route first with credentials
+    // Get auth token from localStorage if available
+    const authToken = localStorage.getItem("clerk-db-jwt") || "anonymous"
+
+    // Try API route first
     try {
       const apiResponse = await fetch(`/api/user-import?userId=${encodeURIComponent(userId)}`, {
         method: "GET",
         headers: {
           Accept: "application/json",
           "Cache-Control": "no-cache",
+          "x-auth-token": authToken,
         },
-        credentials: "include",
       })
 
       console.log("API import response status:", apiResponse.status)
@@ -115,15 +123,18 @@ export async function checkUserBackup(userId: string): Promise<boolean> {
       return false
     }
 
-    // Try API route first with credentials
+    // Get auth token from localStorage if available
+    const authToken = localStorage.getItem("clerk-db-jwt") || "anonymous"
+
+    // Try API route first
     try {
       const apiResponse = await fetch(`/api/user-check?userId=${encodeURIComponent(userId)}`, {
         method: "GET",
         headers: {
           Accept: "application/json",
           "Cache-Control": "no-cache",
+          "x-auth-token": authToken,
         },
-        credentials: "include",
       })
 
       console.log("API check response status:", apiResponse.status)
