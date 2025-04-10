@@ -179,62 +179,72 @@ export default function Home() {
           setIsSyncing(true)
 
           // 检查用户是否有备份
-          const hasBackup = await checkUserBackup(userId)
-          console.log("User has backup:", hasBackup)
+          try {
+            console.log("Checking if user has backup")
+            const hasBackup = await checkUserBackup(userId)
+            console.log("User has backup:", hasBackup)
 
-          if (hasBackup) {
-            // 用户有备份，下载它
-            console.log("User has existing backup, downloading...")
-            try {
-              const result = await importFromBlob(userId)
+            if (hasBackup) {
+              // 用户有备份，下载它
+              console.log("User has existing backup, downloading...")
+              try {
+                const result = await importFromBlob(userId)
 
-              if (result.success && result.data) {
-                try {
-                  console.log("Successfully imported data, length:", result.data.length)
-                  const importedCodes = JSON.parse(result.data) as AuthCode[]
-                  console.log("Parsed imported codes, count:", importedCodes.length)
+                if (result.success && result.data) {
+                  try {
+                    console.log("Successfully imported data, length:", result.data.length)
+                    const importedCodes = JSON.parse(result.data) as AuthCode[]
+                    console.log("Parsed imported codes, count:", importedCodes.length)
 
-                  // 更新本地数据
-                  setAuthCodes(importedCodes)
-                  localStorage.setItem("authCodes", result.data)
+                    // 更新本地数据
+                    setAuthCodes(importedCodes)
+                    localStorage.setItem("authCodes", result.data)
 
-                  // 更新最后同步时间
-                  lastSyncTimeRef.current = Date.now()
+                    // 更新最后同步时间
+                    lastSyncTimeRef.current = Date.now()
 
+                    toast({
+                      title: "数据已恢复",
+                      description: "您的验证码已从备份中恢复。",
+                    })
+                  } catch (parseError) {
+                    console.error("Error parsing imported data:", parseError)
+                    toast({
+                      title: "导入错误",
+                      description: "解析导入的数据时出错。",
+                      variant: "destructive",
+                    })
+                  }
+                } else {
+                  console.error("Failed to import data:", result)
                   toast({
-                    title: "数据已恢复",
-                    description: "您的验证码已从备份中恢复。",
-                  })
-                } catch (parseError) {
-                  console.error("Error parsing imported data:", parseError)
-                  toast({
-                    title: "导入错误",
-                    description: "解析导入的数据时出错。",
+                    title: "导入失败",
+                    description: "无法从备份中恢复数据。",
                     variant: "destructive",
                   })
                 }
-              } else {
-                console.error("Failed to import data:", result)
+              } catch (importError) {
+                console.error("Error during import:", importError)
                 toast({
-                  title: "导入失败",
-                  description: "无法从备份中恢复数据。",
+                  title: "导入错误",
+                  description: "导入数据时发生错误。",
                   variant: "destructive",
                 })
               }
-            } catch (importError) {
-              console.error("Error during import:", importError)
-              toast({
-                title: "导入错误",
-                description: "导入数据时发生错误。",
-                variant: "destructive",
-              })
+            } else {
+              // 新用户，如果有的话，备份当前数据
+              console.log("New user, backing up current data if any...")
+              if (authCodes.length > 0) {
+                await performBackup()
+              }
             }
-          } else {
-            // 新用户，如果有的话，备份当前数据
-            console.log("New user, backing up current data if any...")
-            if (authCodes.length > 0) {
-              await performBackup()
-            }
+          } catch (checkError) {
+            console.error("Error checking for backup:", checkError)
+            toast({
+              title: "检查备份错误",
+              description: "检查备份时发生错误。",
+              variant: "destructive",
+            })
           }
 
           // 设置同步间隔
@@ -248,7 +258,7 @@ export default function Home() {
         } catch (error) {
           console.error("Error initializing user:", error)
           toast({
-            title: "��始化错误",
+            title: "初始化错误",
             description: "初始化用户数据时出错。",
             variant: "destructive",
           })
