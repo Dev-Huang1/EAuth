@@ -17,13 +17,6 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    if (!authToken) {
-      return new Response(JSON.stringify({ error: "Authentication token is required" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      })
-    }
-
     console.log("Checking backup for user:", userId)
 
     // List all blobs with the eauth prefix
@@ -37,6 +30,12 @@ export async function GET(request: NextRequest) {
           headers: { "Content-Type": "application/json" },
         })
       }
+
+      // 记录所有找到的blob以进行调试
+      console.log(`Found ${blobs.length} backup files:`)
+      blobs.forEach((blob, index) => {
+        console.log(`Blob ${index + 1}:`, blob.pathname, blob.url)
+      })
 
       // Find a file that exactly matches the user ID
       const matchingFile = blobs.find((blob) => {
@@ -52,7 +51,7 @@ export async function GET(request: NextRequest) {
         })
       }
 
-      console.log("Found matching file:", matchingFile.pathname)
+      console.log("Found matching file:", matchingFile.pathname, "URL:", matchingFile.url)
 
       return new Response(
         JSON.stringify({
@@ -66,7 +65,7 @@ export async function GET(request: NextRequest) {
       )
     } catch (listError) {
       console.error("Error listing blobs:", listError)
-      return new Response(JSON.stringify({ error: "Failed to list backup files" }), {
+      return new Response(JSON.stringify({ error: "Failed to list backup files", details: String(listError) }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       })
