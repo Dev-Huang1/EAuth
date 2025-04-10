@@ -8,9 +8,9 @@ export async function backupToBlob(data: string, userId: string): Promise<{ url:
 
     console.log("Starting backup for user:", userId, "Data length:", data.length)
 
-    // Try direct backup first (JSON approach)
+    // Try direct backup (JSON approach)
     try {
-      console.log("Trying direct backup API")
+      console.log("Using direct backup API")
       const directResponse = await fetch("/api/direct-backup", {
         method: "POST",
         headers: {
@@ -28,53 +28,15 @@ export async function backupToBlob(data: string, userId: string): Promise<{ url:
         const result = await directResponse.json()
         console.log("Direct backup successful, result:", result)
         return { url: result.url || "", success: true }
+      } else {
+        const errorText = await directResponse.text()
+        console.error("Direct backup error response:", errorText)
+        throw new Error(`Direct backup failed with status ${directResponse.status}: ${errorText}`)
       }
-
-      console.error("Direct backup failed, falling back to FormData approach")
     } catch (directError) {
       console.error("Error with direct backup:", directError)
-      console.log("Falling back to FormData approach")
+      return { url: "", success: false }
     }
-
-    // Fall back to FormData approach
-    // Create a blob with the data
-    const blob = new Blob([data], { type: "application/json" })
-    console.log("Created blob:", blob.size, "bytes, type:", blob.type)
-
-    // Create a file from the blob
-    const file = new File([blob], `${userId}.json`, { type: "application/json" })
-    console.log("Created file:", file.name, "size:", file.size)
-
-    // Create form data
-    const formData = new FormData()
-    formData.append("file", file)
-    formData.append("userId", userId)
-
-    // Get auth token from localStorage if available
-    const authToken = localStorage.getItem("clerk-db-jwt") || "anonymous"
-
-    // Send the request to the user-backup endpoint
-    console.log("Sending backup request to /api/user-backup")
-    const response = await fetch("/api/user-backup", {
-      method: "POST",
-      body: formData,
-      // Don't set Content-Type header, let the browser set it automatically for FormData
-      headers: {
-        "x-auth-token": authToken,
-      },
-    })
-
-    console.log("Backup response status:", response.status)
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error("Backup error response:", errorText)
-      throw new Error(`Backup failed with status ${response.status}: ${errorText}`)
-    }
-
-    const result = await response.json()
-    console.log("Backup successful, result:", result)
-    return { url: result.url || "", success: true }
   } catch (error) {
     console.error("Error backing up data:", error)
     return { url: "", success: false }
