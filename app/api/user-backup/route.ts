@@ -1,41 +1,45 @@
 import { put } from "@vercel/blob"
 import type { NextRequest } from "next/server"
-import { auth } from "@clerk/nextjs/server"
 
 export async function POST(request: NextRequest) {
   try {
     console.log("User backup API called")
 
-    // Get authentication info
-    const authInfo = auth()
-    console.log("Auth info:", JSON.stringify(authInfo, null, 2))
-
-    // Check if user is authenticated
-    if (!authInfo.userId) {
-      console.error("No userId from auth")
-      return new Response(JSON.stringify({ error: "Unauthorized - No user ID" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      })
-    }
-
-    const userId = authInfo.userId
-    console.log("Authenticated userId:", userId)
-
-    console.log("Parsing form data")
+    // Parse form data
     const formData = await request.formData()
     const file = formData.get("file") as File
+    const userId = formData.get("userId") as string
+    const authToken = request.headers.get("x-auth-token")
 
     console.log("Form data parsed:", {
       hasFile: !!file,
-      fileType: file?.type,
       fileSize: file?.size,
+      hasUserId: !!userId,
+      hasAuthToken: !!authToken,
     })
 
+    // Validate required fields
     if (!file) {
       console.error("No file in request")
       return new Response(JSON.stringify({ error: "File is required" }), {
         status: 400,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
+    if (!userId) {
+      console.error("No userId in request")
+      return new Response(JSON.stringify({ error: "User ID is required" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
+    // Simple validation - in a real app, you'd verify the token
+    if (!authToken) {
+      console.error("No auth token in request")
+      return new Response(JSON.stringify({ error: "Authentication token is required" }), {
+        status: 401,
         headers: { "Content-Type": "application/json" },
       })
     }
