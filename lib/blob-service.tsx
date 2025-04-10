@@ -88,7 +88,7 @@ export async function backupToBlob(data: string, userId: string): Promise<{ url:
   }
 }
 
-// Function to import data from Vercel Blob
+// 修改 importFromBlob 函数，改进错误处理
 export async function importFromBlob(userId: string): Promise<{ data: string; success: boolean }> {
   try {
     if (!userId) {
@@ -98,11 +98,68 @@ export async function importFromBlob(userId: string): Promise<{ data: string; su
 
     console.log("Starting import for user:", userId)
 
-    // 尝试使用直接导入API
+    // 直接尝试从URL获取数据
     try {
-      console.log("Trying direct import API")
-      const timestamp = Date.now()
-      const directResponse = await fetch(`/api/debug?userId=${encodeURIComponent(userId)}&t=${timestamp}`, {
+      console.log("Checking if user has backup")
+      const checkResponse = await fetch(`/api/user-check?userId=${encodeURIComponent(userId)}&t=${Date.now()}`, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+          "x-auth-token": localStorage.getItem("clerk-db-jwt") || "anonymous",
+        },
+      })
+
+      if (!checkResponse.ok) {
+        const errorText = await checkResponse.text()
+        console.error("Check API error response:", errorText)
+        throw new Error(`Check API failed with status ${checkResponse.status}: ${errorText}`)
+      }
+
+      const checkResult = await checkResponse.json()
+      console.log("Check API result:", checkResult)
+
+      if (!checkResult.exists || !checkResult.url) {
+        console.log("No backup found for user")
+        return { data: "", success: false }
+      }
+
+      // 直接从URL获取数据
+      console.log("Fetching backup data from URL:", checkResult.url)
+      const dataResponse = await fetch(`${checkResult.url}?t=${Date.now()}`, {
+        method: "GET",
+        headers: {
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      })
+
+      if (!dataResponse.ok) {
+        const errorText = await dataResponse.text()
+        console.error("Data fetch error:", errorText)
+        throw new Error(`Failed to fetch data with status ${dataResponse.status}`)
+      }
+
+      const data = await dataResponse.text()
+      console.log("Successfully fetched data, length:", data.length)
+
+      // 验证数据是否为有效的JSON
+      try {
+        JSON.parse(data)
+        return { data, success: true }
+      } catch (jsonError) {
+        console.error("Retrieved data is not valid JSON:", jsonError)
+        throw new Error("Retrieved data is not valid JSON")
+      }
+    } catch (directError) {
+      console.error("Error with direct fetch:", directError)
+
+      // 尝试使用API导入作为备份方法
+      console.log("Falling back to API import method")
+      const apiResponse = await fetch(`/api/direct-import?userId=${encodeURIComponent(userId)}&t=${Date.now()}`, {
         method: "GET",
         headers: {
           Accept: "application/json",
@@ -112,110 +169,30 @@ export async function importFromBlob(userId: string): Promise<{ data: string; su
         },
       })
 
-      console.log("Debug API response status:", directResponse.status)
+      console.log("API import response status:", apiResponse.status)
 
-      if (!directResponse.ok) {
-        const errorText = await directResponse.text()
-        console.error("Debug API error response:", errorText)
-        throw new Error(`Debug API failed with status ${directResponse.status}: ${errorText}`)
+      if (!apiResponse.ok) {
+        const errorText = await apiResponse.text()
+        console.error("API import error response:", errorText)
+        throw new Error(`API import failed with status ${apiResponse.status}: ${errorText}`)
       }
 
-      const debugResult = await directResponse.json()
-      console.log("Debug API result:", debugResult)
+      const result = await apiResponse.json()
 
-      // 现在尝试实际导入
-      const timestamp2 = Date.now()
-      const directImportResponse = await fetch(
-        `/api/direct-import?userId=${encodeURIComponent(userId)}&t=${timestamp2}`,
-        {
-          method: "GET",
-          headers: {
-            Accept: "application/json",
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            Pragma: "no-cache",
-            Expires: "0",
-          },
-        },
-      )
-
-      console.log("Direct import API response status:", directImportResponse.status)
-
-      if (!directImportResponse.ok) {
-        const errorText = await directImportResponse.text()
-        console.error("Direct import API error response:", errorText)
-        throw new Error(`Direct import API failed with status ${directImportResponse.status}: ${errorText}`)
+      if (!result.success || !result.data) {
+        console.error("API import returned unsuccessful result:", result)
+        throw new Error(result.error || "Import failed")
       }
 
-      const directResult = await directImportResponse.json()
-
-      if (!directResult.success || !directResult.data) {
-        console.error("Direct import API returned unsuccessful result:", directResult)
-        throw new Error(directResult.error || "Direct import failed")
-      }
-
-      console.log("Direct import successful, data length:", directResult.data.length)
+      console.log("API import successful, data length:", result.data.length)
 
       // 验证数据是否为有效的JSON
       try {
-        JSON.parse(directResult.data)
+        JSON.parse(result.data)
+        return { data: result.data, success: true }
       } catch (jsonError) {
         console.error("Retrieved data is not valid JSON:", jsonError)
         throw new Error("Retrieved data is not valid JSON")
-      }
-
-      return { data: directResult.data, success: true }
-    } catch (directError) {
-      console.error("Error with direct import:", directError)
-
-      // 尝试使用原始导入方法作为备份
-      try {
-        console.log("Falling back to original import method")
-
-        // 从localStorage获取auth token（如果可用）
-        const authToken = localStorage.getItem("clerk-db-jwt") || "anonymous"
-
-        // 添加时间戳以避免缓存问题
-        const timestamp = Date.now()
-        const apiResponse = await fetch(`/api/user-import?userId=${encodeURIComponent(userId)}&t=${timestamp}`, {
-          method: "GET",
-          headers: {
-            Accept: "application/json",
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            Pragma: "no-cache",
-            Expires: "0",
-            "x-auth-token": authToken,
-          },
-        })
-
-        console.log("API import response status:", apiResponse.status)
-
-        if (!apiResponse.ok) {
-          const errorText = await apiResponse.text()
-          console.error("API import error response:", errorText)
-          throw new Error(`API import failed with status ${apiResponse.status}: ${errorText}`)
-        }
-
-        const result = await apiResponse.json()
-
-        if (!result.success || !result.data) {
-          console.error("API import returned unsuccessful result:", result)
-          throw new Error(result.error || "Import failed")
-        }
-
-        console.log("API import successful, data length:", result.data.length)
-
-        // 验证数据是否为有效的JSON
-        try {
-          JSON.parse(result.data)
-        } catch (jsonError) {
-          console.error("Retrieved data is not valid JSON:", jsonError)
-          throw new Error("Retrieved data is not valid JSON")
-        }
-
-        return { data: result.data, success: true }
-      } catch (apiError) {
-        console.error("Original import method also failed:", apiError)
-        return { data: "", success: false }
       }
     }
   } catch (error) {
