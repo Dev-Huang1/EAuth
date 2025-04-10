@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/use-toast"
 import AuthCodeCard from "@/components/AuthCodeCard"
@@ -12,11 +12,9 @@ import { motion, AnimatePresence } from "framer-motion"
 import { Moon, Sun, Plus } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import BackupDialog from "@/components/BackupDialog"
-import ImportDialog from "@/components/ImportDialog"
-import AutoBackupConfirmDialog from "@/components/AutoBackupConfirmDialog"
 import { encryptData } from "@/lib/encryption"
-import { backupToBlob } from "@/lib/blob-service"
+import { backupToBlob, importFromBlob, checkUserBackup } from "@/lib/blob-service"
+import { useAuth } from "@clerk/nextjs"
 
 interface AuthCode {
   id: string
@@ -36,15 +34,34 @@ export default function Home() {
   const [editingCode, setEditingCode] = useState<AuthCode | null>(null)
   const { toast } = useToast()
   const { theme, setTheme } = useTheme()
-  const [showBackupDialog, setShowBackupDialog] = useState(false)
-  const [showImportDialog, setShowImportDialog] = useState(false)
-  const [showAutoBackupConfirm, setShowAutoBackupConfirm] = useState(false)
-  const [isAutoBackupEnabled, setIsAutoBackupEnabled] = useState(false)
-  const [backupPassword, setBackupPassword] = useState("")
+  const { isSignedIn, userId, getToken, signOut } = useAuth()
   const [isBackingUp, setIsBackingUp] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const syncIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const lastSyncTimeRef = useRef<number>(0)
+  const hasInitializedRef = useRef<boolean>(false)
 
+  // Store Clerk JWT in localStorage when user signs in
   useEffect(() => {
-    // 从本地存储加载数据
+    const storeToken = async () => {
+      if (isSignedIn && getToken) {
+        try {
+          const token = await getToken()
+          if (token) {
+            localStorage.setItem("clerk-db-jwt", token)
+            console.log("Stored Clerk JWT in localStorage")
+          }
+        } catch (error) {
+          console.error("Failed to get token:", error)
+        }
+      }
+    }
+
+    storeToken()
+  }, [isSignedIn, getToken])
+
+  // Load data from localStorage
+  useEffect(() => {
     const storedCodes = localStorage.getItem("authCodes")
     if (storedCodes) {
       try {
@@ -64,46 +81,253 @@ export default function Home() {
     }
   }, [])
 
-  useEffect(() => {
-    // Check if auto backup is enabled
-    const autoBackup = localStorage.getItem("autoBackupEnabled")
-    if (autoBackup === "true") {
-      setIsAutoBackupEnabled(true)
-
-      // Get the backup password if auto backup is enabled
-      const storedPassword = localStorage.getItem("backupPassword")
-      if (storedPassword) {
-        setBackupPassword(storedPassword)
-      }
-    }
-  }, [])
-
-  const performAutoBackup = useCallback(async () => {
-    if (isAutoBackupEnabled && backupPassword && !isBackingUp) {
+  // Backup function
+  const performBackup = useCallback(async () => {
+    if (isSignedIn && userId && !isBackingUp && authCodes.length > 0) {
       try {
         setIsBackingUp(true)
-        console.log("Performing auto backup...")
+        console.log("Performing backup for user:", userId, "Auth codes count:", authCodes.length)
         const dataToBackup = JSON.stringify(authCodes)
-        const result = await backupToBlob(dataToBackup, backupPassword)
+        console.log("Data prepared for backup, length:", dataToBackup.length)
+
+        const result = await backupToBlob(dataToBackup, userId)
+
         if (!result.success) {
-          console.error("Auto backup failed")
+          console.error("Backup failed")
+          toast({
+            title: "Backup Failed",
+            description: "There was an error backing up your data. Please try again.",
+            variant: "destructive",
+          })
         } else {
-          console.log("Auto backup successful")
+          console.log("Backup successful")
+          // Update last sync time to avoid immediate sync after backup
+          lastSyncTimeRef.current = Date.now()
         }
       } catch (error) {
-        console.error("Auto backup failed:", error)
+        console.error("Backup failed:", error)
+        toast({
+          title: "Backup Error",
+          description: error instanceof Error ? error.message : "Unknown error during backup",
+          variant: "destructive",
+        })
       } finally {
         setIsBackingUp(false)
       }
+    } else {
+      console.log("Skipping backup:", {
+        isSignedIn,
+        hasUserId: !!userId,
+        isBackingUp,
+        authCodesCount: authCodes.length,
+      })
     }
-  }, [isAutoBackupEnabled, backupPassword, authCodes, isBackingUp])
+  }, [isSignedIn, userId, authCodes, isBackingUp, toast])
 
-  // Watch for changes to authCodes and trigger auto backup
-  useEffect(() => {
-    if (authCodes.length > 0) {
-      performAutoBackup()
+  // Sync function
+  const syncData = useCallback(async () => {
+    if (isSignedIn && userId && !isSyncing) {
+      // Only sync if it's been more than 20 seconds since last sync
+      const now = Date.now()
+      if (now - lastSyncTimeRef.current > 20000) {
+        try {
+          setIsSyncing(true)
+          console.log("Syncing data for user:", userId)
+
+          const result = await importFromBlob(userId)
+
+          if (result.success && result.data) {
+            try {
+              const importedCodes = JSON.parse(result.data) as AuthCode[]
+
+              // Only update if we have data to import and it's different from what we have
+              if (importedCodes.length > 0) {
+                const currentCodesJson = JSON.stringify(authCodes)
+                const importedCodesJson = JSON.stringify(importedCodes)
+
+                if (currentCodesJson !== importedCodesJson) {
+                  console.log("Data changed, updating local storage")
+                  setAuthCodes(importedCodes)
+                  localStorage.setItem("authCodes", result.data)
+                } else {
+                  console.log("Data unchanged, no update needed")
+                }
+              }
+
+              lastSyncTimeRef.current = now
+            } catch (parseError) {
+              console.error("Error parsing imported data:", parseError)
+            }
+          }
+        } catch (error) {
+          console.error("Error syncing data:", error)
+        } finally {
+          setIsSyncing(false)
+        }
+      }
     }
-  }, [authCodes, performAutoBackup])
+  }, [isSignedIn, userId, isSyncing, authCodes])
+
+  // Initialize when user signs in
+  useEffect(() => {
+    const initializeUser = async () => {
+      if (isSignedIn && userId && !hasInitializedRef.current) {
+        hasInitializedRef.current = true
+
+        try {
+          console.log("Initializing user:", userId)
+          setIsSyncing(true)
+
+          // 检查用户是否有备份
+          try {
+            console.log("Checking if user has backup")
+            const hasBackup = await checkUserBackup(userId)
+            console.log("User has backup:", hasBackup)
+
+            if (hasBackup) {
+              // 用户有备份，下载它
+              console.log("User has existing backup, downloading...")
+              try {
+                const result = await importFromBlob(userId)
+
+                if (result.success && result.data) {
+                  try {
+                    console.log("Successfully imported data, length:", result.data.length)
+                    const importedCodes = JSON.parse(result.data) as AuthCode[]
+                    console.log("Parsed imported codes, count:", importedCodes.length)
+
+                    // 更新本地数据
+                    setAuthCodes(importedCodes)
+                    localStorage.setItem("authCodes", result.data)
+
+                    // 更新最后同步时间
+                    lastSyncTimeRef.current = Date.now()
+
+                    toast({
+                      title: "数据已恢复",
+                      description: "您的验证码已从备份中恢复。",
+                    })
+                  } catch (parseError) {
+                    console.error("Error parsing imported data:", parseError)
+                    toast({
+                      title: "导入错误",
+                      description: "解析导入的数据时出错。",
+                      variant: "destructive",
+                    })
+                  }
+                } else {
+                  console.error("Failed to import data:", result)
+                  toast({
+                    title: "导入失败",
+                    description: "无法从备份中恢复数据。",
+                    variant: "destructive",
+                  })
+                }
+              } catch (importError) {
+                console.error("Error during import:", importError)
+                toast({
+                  title: "导入错误",
+                  description: "导入数据时发生错误。",
+                  variant: "destructive",
+                })
+              }
+            } else {
+              // 新用户，如果有的话，备份当前数据
+              console.log("New user, backing up current data if any...")
+              if (authCodes.length > 0) {
+                await performBackup()
+              }
+            }
+          } catch (checkError) {
+            console.error("Error checking for backup:", checkError)
+            toast({
+              title: "检查备份错误",
+              description: "检查备份时发生错误。",
+              variant: "destructive",
+            })
+          }
+
+          // 设置同步间隔
+          if (syncIntervalRef.current) {
+            clearInterval(syncIntervalRef.current)
+          }
+
+          syncIntervalRef.current = setInterval(() => {
+            syncData()
+          }, 30000) // 每30秒同步一次
+        } catch (error) {
+          console.error("Error initializing user:", error)
+          toast({
+            title: "初始化错误",
+            description: "初始化用户数据时出错。",
+            variant: "destructive",
+          })
+        } finally {
+          setIsSyncing(false)
+        }
+      }
+    }
+
+    initializeUser()
+
+    // 在卸载或用户退出登录时清理
+    return () => {
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current)
+        syncIntervalRef.current = null
+      }
+    }
+  }, [isSignedIn, userId, authCodes, performBackup, syncData, toast])
+
+  // Handle data changes and trigger backup
+  const handleDataChange = useCallback(
+    (newCodes: AuthCode[]) => {
+      setAuthCodes(newCodes)
+      localStorage.setItem("authCodes", JSON.stringify(newCodes))
+
+      // Trigger backup if signed in
+      if (isSignedIn && userId) {
+        performBackup()
+      }
+    },
+    [isSignedIn, userId, performBackup],
+  )
+
+  // Handle group changes and trigger backup
+  const handleGroupChange = useCallback(
+    (newGroups: string[]) => {
+      setGroups(newGroups)
+      localStorage.setItem("groups", JSON.stringify(newGroups))
+
+      // Trigger backup if signed in
+      if (isSignedIn && userId) {
+        performBackup()
+      }
+    },
+    [isSignedIn, userId, performBackup],
+  )
+
+  const handleLogout = async () => {
+    // Backup data before signing out
+    if (isSignedIn && userId) {
+      await performBackup()
+    }
+
+    // Clear sync interval
+    if (syncIntervalRef.current) {
+      clearInterval(syncIntervalRef.current)
+      syncIntervalRef.current = null
+    }
+
+    // Reset initialization flag
+    hasInitializedRef.current = false
+
+    await signOut()
+    toast({
+      title: "Signed Out",
+      description: "You have been signed out.",
+    })
+  }
 
   const addAuthCode = (issuer: string, account: string, secret: string, group: string, service: string) => {
     // Generate a random key for encrypting this specific secret
@@ -126,8 +350,7 @@ export default function Home() {
     }
 
     const updatedCodes = [...authCodes, newCode]
-    setAuthCodes(updatedCodes)
-    localStorage.setItem("authCodes", JSON.stringify(updatedCodes))
+    handleDataChange(updatedCodes)
   }
 
   const updateAuthCode = (updatedCode: AuthCode) => {
@@ -148,28 +371,39 @@ export default function Home() {
     }
 
     const updatedCodes = authCodes.map((code) => (code.id === updatedCode.id ? updatedCode : code))
-    setAuthCodes(updatedCodes)
-    localStorage.setItem("authCodes", JSON.stringify(updatedCodes))
+    handleDataChange(updatedCodes)
   }
 
   const pinAuthCode = (id: string) => {
     const updatedCodes = authCodes.map((code) => (code.id === id ? { ...code, isPinned: !code.isPinned } : code))
-    setAuthCodes(updatedCodes)
-    localStorage.setItem("authCodes", JSON.stringify(updatedCodes))
-  }
-
-  const editAuthCode = (id: string) => {
-    const codeToEdit = authCodes.find((code) => code.id === id)
-    if (codeToEdit) {
-      setEditingCode(codeToEdit)
-      setShowSettings(true)
-    }
+    handleDataChange(updatedCodes)
   }
 
   const deleteAuthCode = (id: string) => {
     const updatedCodes = authCodes.filter((code) => code.id !== id)
-    setAuthCodes(updatedCodes)
-    localStorage.setItem("authCodes", JSON.stringify(updatedCodes))
+    handleDataChange(updatedCodes)
+  }
+
+  const addGroup = (groupName: string) => {
+    if (!groups.includes(groupName)) {
+      const updatedGroups = [...groups, groupName]
+      handleGroupChange(updatedGroups)
+    }
+  }
+
+  const removeGroup = (groupName: string) => {
+    if (groupName !== "All") {
+      const updatedGroups = groups.filter((g) => g !== groupName)
+      handleGroupChange(updatedGroups)
+
+      // Move auth codes from the removed group to "All"
+      const updatedCodes = authCodes.map((code) => (code.group === groupName ? { ...code, group: "All" } : code))
+      handleDataChange(updatedCodes)
+
+      if (activeGroup === groupName) {
+        setActiveGroup("All")
+      }
+    }
   }
 
   const exportData = () => {
@@ -214,8 +448,7 @@ export default function Home() {
               group: token.group || "All",
               service: token.service || "",
             }))
-            setAuthCodes(newAuthCodes)
-            localStorage.setItem("authCodes", JSON.stringify(newAuthCodes))
+            handleDataChange(newAuthCodes)
             toast({
               title: "Import Successful",
               description: "Your auth codes have been imported.",
@@ -235,31 +468,6 @@ export default function Home() {
     }
   }
 
-  const addGroup = (groupName: string) => {
-    if (!groups.includes(groupName)) {
-      const updatedGroups = [...groups, groupName]
-      setGroups(updatedGroups)
-      localStorage.setItem("groups", JSON.stringify(updatedGroups))
-    }
-  }
-
-  const removeGroup = (groupName: string) => {
-    if (groupName !== "All") {
-      const updatedGroups = groups.filter((g) => g !== groupName)
-      setGroups(updatedGroups)
-      localStorage.setItem("groups", JSON.stringify(updatedGroups))
-
-      // Move auth codes from the removed group to "All"
-      const updatedCodes = authCodes.map((code) => (code.group === groupName ? { ...code, group: "All" } : code))
-      setAuthCodes(updatedCodes)
-      localStorage.setItem("authCodes", JSON.stringify(updatedCodes))
-
-      if (activeGroup === groupName) {
-        setActiveGroup("All")
-      }
-    }
-  }
-
   const sortedAuthCodes = [...authCodes].sort((a, b) => {
     if (a.isPinned === b.isPinned) {
       return a.issuer.localeCompare(b.issuer)
@@ -267,171 +475,11 @@ export default function Home() {
     return a.isPinned ? -1 : 1
   })
 
-  const handleBackup = async (password: string, hash: string) => {
-    try {
-      const dataToBackup = JSON.stringify(authCodes)
-      const result = await backupToBlob(dataToBackup, hash)
-
-      if (result.success) {
-        setShowBackupDialog(false)
-        setShowAutoBackupConfirm(true)
-        // Store the password for potential auto backup
-        setBackupPassword(hash)
-        localStorage.setItem("backupPassword", hash)
-
-        toast({
-          title: "Backup Successful",
-          description: "Your data has been backed up successfully.",
-        })
-      } else {
-        throw new Error("Backup failed")
-      }
-    } catch (error) {
-      toast({
-        title: "Backup Failed",
-        description: "There was an error backing up your data.",
-        variant: "destructive",
-      })
-      console.error("Backup error:", error)
-    }
-  }
-
-  const handleImport = async (password: string, hash: string) => {
-    try {
-      console.log("Starting import with hash:", hash)
-
-      // Show loading toast
-      toast({
-        title: "Importing Data",
-        description: "Please wait while we retrieve your data...",
-      })
-
-      // Make the API request
-      const response = await fetch(`/api/import?hash=${encodeURIComponent(hash)}`, {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          "Cache-Control": "no-cache",
-        },
-      })
-
-      console.log("Import response status:", response.status)
-
-      // Handle non-OK responses
-      if (!response.ok) {
-        let errorMessage = "Import failed"
-
-        try {
-          const errorData = await response.json()
-          errorMessage = errorData.error || "Import failed"
-        } catch (e) {
-          // If we can't parse the response as JSON, use the status text
-          errorMessage = `Import failed: ${response.statusText}`
-        }
-
-        console.error("Import error:", errorMessage)
-
-        toast({
-          title: "Import Failed",
-          description: errorMessage,
-          variant: "destructive",
-        })
-
-        return
-      }
-
-      // Parse the response
-      let result
-      try {
-        result = await response.json()
-      } catch (e) {
-        console.error("Failed to parse response as JSON:", e)
-        toast({
-          title: "Import Failed",
-          description: "Invalid response from server",
-          variant: "destructive",
-        })
-        return
-      }
-
-      // Check if we have data
-      if (!result.data) {
-        toast({
-          title: "Import Failed",
-          description: "No data returned from server",
-          variant: "destructive",
-        })
-        return
-      }
-
-      // Parse the imported data
-      try {
-        const importedCodes = JSON.parse(result.data) as AuthCode[]
-        setAuthCodes(importedCodes)
-        localStorage.setItem("authCodes", JSON.stringify(importedCodes))
-
-        // Store the password for potential auto backup
-        setBackupPassword(hash)
-        localStorage.setItem("backupPassword", hash)
-
-        // Close the dialog
-        setShowImportDialog(false)
-
-        toast({
-          title: "Import Successful",
-          description: `Imported ${importedCodes.length} authentication codes`,
-        })
-      } catch (parseError) {
-        console.error("Error parsing imported data:", parseError)
-        toast({
-          title: "Import Failed",
-          description: "The imported data is not in the correct format",
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      console.error("Import error:", error)
-      toast({
-        title: "Import Failed",
-        description: error instanceof Error ? error.message : "An unexpected error occurred",
-        variant: "destructive",
-      })
-    }
-  }
-
-  const enableAutoBackup = () => {
-    setIsAutoBackupEnabled(true)
-    localStorage.setItem("autoBackupEnabled", "true")
-    setShowAutoBackupConfirm(false)
-
-    toast({
-      title: "Auto Backup Enabled",
-      description: "Your data will be automatically backed up when changes are made.",
-    })
-  }
-
-  const toggleAutoBackup = () => {
-    if (isAutoBackupEnabled) {
-      setIsAutoBackupEnabled(false)
-      localStorage.setItem("autoBackupEnabled", "false")
-
-      toast({
-        title: "Auto Backup Disabled",
-        description: "Automatic backup has been disabled.",
-      })
-    } else {
-      if (backupPassword) {
-        setIsAutoBackupEnabled(true)
-        localStorage.setItem("autoBackupEnabled", "true")
-
-        toast({
-          title: "Auto Backup Enabled",
-          description: "Your data will be automatically backed up when changes are made.",
-        })
-      } else {
-        // If no backup password is set, prompt for backup first
-        setShowBackupDialog(true)
-      }
+  const editAuthCode = (id: string) => {
+    const codeToEdit = authCodes.find((code) => code.id === id)
+    if (codeToEdit) {
+      setEditingCode(codeToEdit)
+      setShowSettings(true)
     }
   }
 
@@ -439,7 +487,7 @@ export default function Home() {
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 transition-colors duration-300">
       <header className="bg-white dark:bg-gray-800 shadow-sm">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">EAuth</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">2FA Auth App</h1>
           <div className="flex items-center space-x-2">
             <Button
               variant="ghost"
@@ -452,16 +500,13 @@ export default function Home() {
               <span className="sr-only">Toggle theme</span>
             </Button>
             <MainMenu
-              onExport={exportData}
-              onImport={importData}
               onOpenSettings={() => setShowSettings(true)}
               groups={groups}
               onAddGroup={addGroup}
               onRemoveGroup={removeGroup}
-              onBackup={() => setShowBackupDialog(true)}
-              onImportBackup={() => setShowImportDialog(true)}
-              isAutoBackupEnabled={isAutoBackupEnabled}
-              onToggleAutoBackup={toggleAutoBackup}
+              onLogout={handleLogout}
+              onExport={exportData}
+              onImport={importData}
             />
           </div>
         </div>
@@ -537,22 +582,6 @@ export default function Home() {
           editingCode={editingCode}
         />
       )}
-      {showBackupDialog && (
-        <BackupDialog isOpen={showBackupDialog} onClose={() => setShowBackupDialog(false)} onBackup={handleBackup} />
-      )}
-
-      {showImportDialog && (
-        <ImportDialog isOpen={showImportDialog} onClose={() => setShowImportDialog(false)} onImport={handleImport} />
-      )}
-
-      {showAutoBackupConfirm && (
-        <AutoBackupConfirmDialog
-          isOpen={showAutoBackupConfirm}
-          onClose={() => setShowAutoBackupConfirm(false)}
-          onConfirm={enableAutoBackup}
-        />
-      )}
     </div>
   )
 }
-

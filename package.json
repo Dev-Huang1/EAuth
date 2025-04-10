@@ -62,7 +62,8 @@
     "crypto-js": "latest",
     "qr-scanner": "latest",
     "react-icons": "latest",
-    "@vercel/blob": "latest"
+    "@vercel/blob": "latest",
+    "@clerk/nextjs": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",
