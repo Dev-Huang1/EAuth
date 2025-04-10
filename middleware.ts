@@ -11,11 +11,11 @@ export default authMiddleware({
     "/api/user-backup",
     "/api/user-import",
     "/api/user-check",
-    "/api/direct-backup", // Add the new direct backup route
+    "/api/direct-backup",
     "/api/auth-test",
   ],
 })
 
 export const config = {
-  matcher: ["/((?!.*\\..*|_next).*)", "/", "/(api|trpc)((.*)"],
+  matcher: ["/((?!.*\\..*|_next).*)", "/", "/(api|trpc)(.*)"],
 }
