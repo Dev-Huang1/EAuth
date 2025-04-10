@@ -4,21 +4,44 @@ import { auth } from "@clerk/nextjs/server"
 
 export async function POST(request: NextRequest) {
   try {
+    console.log("User backup API called")
+
     const { userId } = auth()
+    console.log("Auth userId:", userId)
 
     if (!userId) {
+      console.error("No userId from auth")
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
       })
     }
 
+    console.log("Parsing form data")
     const formData = await request.formData()
-    const file = formData.get("file") as File | null
+    const file = formData.get("file") as File
+    const requestUserId = formData.get("userId") as string
+
+    console.log("Form data parsed:", {
+      hasFile: !!file,
+      fileType: file?.type,
+      fileSize: file?.size,
+      requestUserId,
+    })
 
     if (!file) {
+      console.error("No file in request")
       return new Response(JSON.stringify({ error: "File is required" }), {
         status: 400,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+
+    // Verify the requested userId matches the authenticated userId
+    if (requestUserId && requestUserId !== userId) {
+      console.error("User ID mismatch:", requestUserId, "vs", userId)
+      return new Response(JSON.stringify({ error: "Unauthorized access to another user's data" }), {
+        status: 403,
         headers: { "Content-Type": "application/json" },
       })
     }
@@ -29,8 +52,10 @@ export async function POST(request: NextRequest) {
     try {
       // Always use the same filename for a user to ensure we're updating the existing blob
       const filename = `eauth/${userId}.json`
+      console.log("Using filename:", filename)
 
       // Use addRandomSuffix: false to ensure we replace the existing file
+      console.log("Calling Vercel Blob put function")
       const blob = await put(filename, file, {
         access: "public",
         addRandomSuffix: false,
@@ -48,12 +73,12 @@ export async function POST(request: NextRequest) {
           headers: { "Content-Type": "application/json" },
         },
       )
-    } catch (blobError: any) {
+    } catch (blobError) {
       console.error("Blob operation error:", blobError)
       return new Response(
         JSON.stringify({
           error: `Failed to store blob: ${blobError.message}`,
-          details: blobError.stack,
+          details: blobError instanceof Error ? blobError.stack : String(blobError),
         }),
         {
           status: 500,
@@ -61,12 +86,12 @@ export async function POST(request: NextRequest) {
         },
       )
     }
-  } catch (error: any) {
+  } catch (error) {
     console.error("Backup route error:", error)
     return new Response(
       JSON.stringify({
         error: error instanceof Error ? error.message : "Failed to backup data",
-        details: error instanceof Error ? error.stack : undefined,
+        details: error instanceof Error ? error.stack : String(error),
       }),
       {
         status: 500,
