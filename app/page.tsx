@@ -181,14 +181,15 @@ export default function Home() {
           // 检查用户是否有备份
           try {
             console.log("Checking if user has backup")
-            const hasBackup = await checkUserBackup(userId)
-            console.log("User has backup:", hasBackup)
+            const checkResult = await checkUserBackup(userId)
+            console.log("Check result:", checkResult)
 
-            if (hasBackup) {
+            if (checkResult.exists) {
               // 用户有备份，下载它
               console.log("User has existing backup, downloading...")
               try {
-                const result = await importFromBlob(userId)
+                // 使用URL（如果有）或userId导入数据
+                const result = await importFromBlob(userId, checkResult.url)
 
                 if (result.success && result.data) {
                   try {
