@@ -7,10 +7,12 @@ export default authMiddleware({
     "/init",
     "/sign-in",
     "/sign-up",
-    "/api/test-blob", // Make the test route public
+    "/api/test-blob",
+    "/api/user-backup", // Make backup API public
+    "/api/user-import",
+    "/api/user-check",
+    "/api/auth-test",
   ],
-  // Make sure API routes are properly authenticated
-  apiRoutes: ["/api(.*)"],
 })
 
 export const config = {
