@@ -1,20 +1,14 @@
 import { list } from "@vercel/blob"
 import type { NextRequest } from "next/server"
-import { auth } from "@clerk/nextjs/server"
 
 export async function GET(request: NextRequest) {
   try {
-    const { userId: authUserId } = auth()
-
-    if (!authUserId) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      })
-    }
-
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get("userId")
+    const authToken = request.headers.get("x-auth-token")
+
+    console.log("Check API called for user:", userId)
+    console.log("Has auth token:", !!authToken)
 
     if (!userId) {
       return new Response(JSON.stringify({ error: "User ID parameter is required" }), {
@@ -23,10 +17,9 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Verify the requested userId matches the authenticated userId
-    if (userId !== authUserId) {
-      return new Response(JSON.stringify({ error: "Unauthorized access to another user's data" }), {
-        status: 403,
+    if (!authToken) {
+      return new Response(JSON.stringify({ error: "Authentication token is required" }), {
+        status: 401,
         headers: { "Content-Type": "application/json" },
       })
     }
